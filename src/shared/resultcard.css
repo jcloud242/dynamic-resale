@@ -1,0 +1,8 @@
+.dr-resultcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;background:#07101a;color:#e6eef8;margin-bottom:8px}
+.dr-thumb{width:64px;height:64px;border-radius:6px;object-fit:cover}
+.dr-main{flex:1}
+.dr-title{font-weight:600}
+.dr-meta{font-size:12px;color:#9aa7b2}
+.dr-stats{text-align:right}
+.dr-avg{font-weight:700;font-size:18px}
+.dr-minmax{font-size:12px;color:#9aa7b2}

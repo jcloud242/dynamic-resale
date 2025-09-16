@@ -1,0 +1,3 @@
+.dr-searchbar{display:flex;gap:8px;padding:8px}
+.dr-searchbar input{flex:1;padding:10px;border-radius:8px;border:0;background:#111827;color:#e6eef8}
+.dr-searchbar button{padding:8px 12px;border-radius:8px;border:0;background:#1f2937;color:#fff}

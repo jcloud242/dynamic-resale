@@ -1,0 +1,5 @@
+.dr-home{padding:16px;padding-bottom:80px}
+.dr-actions{display:flex;flex-direction:column;gap:12px}
+.dr-scan-buttons{display:flex;gap:8px}
+.dr-scan-buttons button{padding:10px;border-radius:8px;border:0;background:#111827;color:#e6eef8}
+.dr-results{margin-top:16px}
