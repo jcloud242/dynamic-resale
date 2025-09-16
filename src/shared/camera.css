@@ -51,7 +51,22 @@
 @keyframes dr-pulse-key{0%{transform:scale(1)}30%{transform:scale(1.06)}60%{transform:scale(0.995)}100%{transform:scale(1)}}
 .dr-pulse{animation:dr-pulse-key 760ms cubic-bezier(.2,.9,.3,1) 1}
 
+/* snap highlight when result centroid is near center */
+.dr-target-center.snap {
+	outline: 3px solid rgba(255,255,255,0.06);
+	box-shadow: 0 0 28px rgba(56,142,60,0.42), inset 0 0 18px rgba(56,142,60,0.06);
+	transform: scale(1.1);
+	transition: transform 180ms ease, box-shadow 200ms ease, outline-color 200ms ease;
+}
+
 .dr-camera-hint{margin-top:8px;color:#f59e0b;font-size:13px}
+
+/* optional visual guides overlay */
+.dr-guides-toggle{position:absolute;left:12px;top:12px;z-index:40}
+.dr-guides-btn{background:rgba(255,255,255,0.06);border:0;color:var(--dr-accent);padding:6px 8px;border-radius:8px;font-size:12px}
+.dr-guides-overlay{position:absolute;inset:0;pointer-events:none;z-index:20}
+.dr-guides-line{position:absolute;background:rgba(255,255,255,0.06)}
+.dr-guides-label{position:absolute;color:rgba(255,255,255,0.6);font-size:11px;background:rgba(0,0,0,0.25);padding:2px 6px;border-radius:6px}
 
 .dr-success-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .dr-success-card{background:linear-gradient(180deg,#f8fff7,#e6fff0);color:#042018;padding:14px 20px;border-radius:12px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,0.26);transform:translateY(8px) scale(0.98);opacity:0;transition:transform 320ms cubic-bezier(.2,.9,.3,1),opacity 220ms ease}

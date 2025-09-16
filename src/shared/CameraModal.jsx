@@ -27,6 +27,29 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
   const [GRACE_PERIOD_MS, setGracePeriodMs] = useState(1800);
   const [FAILURE_THRESHOLD, setFailureThreshold] = useState(2);
   const [brightnessHint, setBrightnessHint] = useState(null);
+  // accessibility: do not announce by default; allow enabling via toggle
+  const [announceResults, setAnnounceResults] = useState(false);
+  // visual guides toggle (off by default)
+  const [showGuides, setShowGuides] = useState(false);
+  const [showSnap, setShowSnap] = useState(false);
+  const isHandlingRef = useRef(false);
+  // cache pre-warmed ZXing module to avoid dynamic-import latency
+  const zxModuleRef = useRef(null);
+  const firstStartRef = useRef(true);
+
+  // pre-warm ZXing decoder on mount (non-blocking)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const zx = await import('@zxing/browser');
+        if (!cancelled) zxModuleRef.current = zx;
+      } catch (e) {
+        // ignore pre-warm failures; initScanner will still attempt to import
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
   // no persisted stats anymore
@@ -34,7 +57,7 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
     let active = true;
     async function initScanner() {
       try {
-        const zx = await import('@zxing/browser');
+        const zx = zxModuleRef.current || await import('@zxing/browser');
         const { BrowserMultiFormatReader } = zx;
         const hints = undefined;
         const reader = new BrowserMultiFormatReader(hints);
@@ -50,15 +73,18 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
           if (started) {
             reader.decodeFromVideoDevice(deviceId, videoRef.current, (result, err) => {
               if (!active) return;
+              if (isHandlingRef.current) return;
               if (result) {
                 // Found a code live: show success pulse/overlay and auto-accept for barcode mode
                 const text = result.getText();
+                isHandlingRef.current = true;
                 setShowPulse(true);
+                // allow subsequent detections after a short visual window so scanner remains responsive
+                setTimeout(() => { isHandlingRef.current = false; }, 350);
                 setShowFailure(false);
                 setLastResult(text);
                   setError(null);
                   setBrightnessHint(null);
-                try { reader.reset(); } catch (e) {}
                 if (mode === 'barcode') {
                   setAutoAccepting(true);
                   try { onDetected({ type: 'barcode', value: text }); } catch (e) {}
@@ -68,6 +94,7 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
                   autoAcceptTimeoutRef.current = setTimeout(() => {
                     try { onClose(); } catch (e) {}
                     setAutoAccepting(false);
+                    isHandlingRef.current = false;
                   }, 900);
                 } else {
                   // keep confirm flow for non-barcode modes
@@ -94,13 +121,22 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
         setError(err.message || String(err));
       }
     }
-    initScanner();
+  initScanner();
+
+  function onKey(e) {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        try { codeReaderRef.current && codeReaderRef.current.reset(); } catch(e){}
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey);
 
     return () => {
       active = false;
       try {
         if (codeReaderRef.current) codeReaderRef.current.reset();
       } catch (e) {}
+  window.removeEventListener('keydown', onKey);
     };
   }, [onClose, onDetected, selectedDevice, restartCount]);
 
@@ -118,6 +154,7 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
     // wait a brief warmup so user can position barcode and camera can stabilize
   autoCaptureStarterRef.current = setTimeout(() => {
       if (autoCaptureRef.current) clearInterval(autoCaptureRef.current);
+      // slightly shorter warmup and faster interval to be more responsive on first use
       autoCaptureRef.current = setInterval(() => {
     if (pendingAutoResult || autoAccepting) return; // pause if user deciding or auto-accepting
   // enforce grace period so user has time to position barcode
@@ -125,8 +162,8 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
     if (Date.now() - startedAt < GRACE_PERIOD_MS) return;
   // try capture (captureFrame will guard overlapping and video readiness)
   captureFrame();
-      }, 1200);
-    }, 700);
+      }, 700);
+    }, 350);
 
     return () => {
       if (autoCaptureStarterRef.current) { clearTimeout(autoCaptureStarterRef.current); autoCaptureStarterRef.current = null; }
@@ -176,14 +213,19 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
       const crops = [];
       // full frame
       crops.push({ x: 0, y: 0, w: canvas.width, h: canvas.height });
-      // center crop
-      const cw = Math.floor(canvas.width * 0.6);
-      const ch = Math.floor(canvas.height * 0.4);
-      crops.push({ x: Math.floor((canvas.width - cw) / 2), y: Math.floor((canvas.height - ch) / 2), w: cw, h: ch });
-      // small center (zoom)
-      const cw2 = Math.floor(canvas.width * 0.4);
-      const ch2 = Math.floor(canvas.height * 0.2);
-      crops.push({ x: Math.floor((canvas.width - cw2) / 2), y: Math.floor((canvas.height - ch2) / 2), w: cw2, h: ch2 });
+  // center crop
+  const cw = Math.floor(canvas.width * 0.6);
+  const ch = Math.floor(canvas.height * 0.4);
+  crops.push({ x: Math.floor((canvas.width - cw) / 2), y: Math.floor((canvas.height - ch) / 2), w: cw, h: ch });
+  // left and right wider crops to catch off-center barcodes
+  const wWide = Math.floor(canvas.width * 0.7);
+  const hWide = Math.floor(canvas.height * 0.45);
+  crops.push({ x: Math.floor((canvas.width - wWide) * 0.02), y: Math.floor((canvas.height - hWide) / 2), w: wWide, h: hWide });
+  crops.push({ x: Math.floor(canvas.width - wWide - (canvas.width - wWide) * 0.02), y: Math.floor((canvas.height - hWide) / 2), w: wWide, h: hWide });
+  // small center (zoom)
+  const cw2 = Math.floor(canvas.width * 0.4);
+  const ch2 = Math.floor(canvas.height * 0.25);
+  crops.push({ x: Math.floor((canvas.width - cw2) / 2), y: Math.floor((canvas.height - ch2) / 2), w: cw2, h: ch2 });
 
       const zx = await import('@zxing/browser');
       const { BrowserMultiFormatReader } = zx;
@@ -200,11 +242,95 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
         try {
           if (typeof reader.decodeFromImage === 'function') {
             const dataUrl = tmp.toDataURL('image/png');
-            const r = await reader.decodeFromImage(undefined, dataUrl);
-            if (r) { finalResult = r; }
+            let r = await reader.decodeFromImage(undefined, dataUrl);
+            if (!r) {
+              // try rotated attempts (mild angles) for tilted barcodes
+              for (const ang of [7, -7, 14, -14]) {
+                try {
+                  const rot = document.createElement('canvas');
+                  const rw = tmp.width, rh = tmp.height;
+                  rot.width = rw; rot.height = rh;
+                  const rctx = rot.getContext('2d');
+                  rctx.translate(rw/2, rh/2);
+                  rctx.rotate((ang * Math.PI) / 180);
+                  rctx.drawImage(tmp, -rw/2, -rh/2);
+                  const rdata = rot.toDataURL('image/png');
+                  r = await reader.decodeFromImage(undefined, rdata);
+                  if (r) break;
+                } catch (e) { /* ignore */ }
+              }
+            }
+            if (r) {
+              finalResult = r;
+              // if guides are on, check centroid of result points and trigger snap highlight
+              if (showGuides) {
+                try {
+                  const pts = (r.getResultPoints && r.getResultPoints()) || r.resultPoints || null;
+                  if (pts && pts.length) {
+                    let sx = 0, sy = 0;
+                    for (const p of pts) {
+                      const x = (typeof p.getX === 'function') ? p.getX() : (p.x ?? p[0]);
+                      const y = (typeof p.getY === 'function') ? p.getY() : (p.y ?? p[1]);
+                      sx += x; sy += y;
+                    }
+                    const cx = sx / pts.length;
+                    const cy = sy / pts.length;
+                    const dx = cx - tmp.width / 2;
+                    const dy = cy - tmp.height / 2;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const threshold = Math.min(tmp.width, tmp.height) * 0.22;
+                    if (dist < threshold) {
+                      setShowSnap(true);
+                      setTimeout(() => setShowSnap(false), 700);
+                    }
+                  }
+                } catch (e) { /* non-fatal */ }
+              }
+            }
           } else if (typeof reader.decodeFromCanvas === 'function') {
-            const r = await reader.decodeFromCanvas(tmp);
-            if (r) { finalResult = r; }
+            let r = await reader.decodeFromCanvas(tmp);
+            if (!r) {
+              // try rotated canvas decodes
+              for (const ang of [7, -7, 14, -14]) {
+                try {
+                  const rot = document.createElement('canvas');
+                  const rw = tmp.width, rh = tmp.height;
+                  rot.width = rw; rot.height = rh;
+                  const rctx = rot.getContext('2d');
+                  rctx.translate(rw/2, rh/2);
+                  rctx.rotate((ang * Math.PI) / 180);
+                  rctx.drawImage(tmp, -rw/2, -rh/2);
+                  const rr = await reader.decodeFromCanvas(rot);
+                  if (rr) { r = rr; break; }
+                } catch (e) { /* ignore */ }
+              }
+            }
+            if (r) {
+              finalResult = r;
+              if (showGuides) {
+                try {
+                  const pts = (r.getResultPoints && r.getResultPoints()) || r.resultPoints || null;
+                  if (pts && pts.length) {
+                    let sx = 0, sy = 0;
+                    for (const p of pts) {
+                      const x = (typeof p.getX === 'function') ? p.getX() : (p.x ?? p[0]);
+                      const y = (typeof p.getY === 'function') ? p.getY() : (p.y ?? p[1]);
+                      sx += x; sy += y;
+                    }
+                    const cx = sx / pts.length;
+                    const cy = sy / pts.length;
+                    const dx = cx - tmp.width / 2;
+                    const dy = cy - tmp.height / 2;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const threshold = Math.min(tmp.width, tmp.height) * 0.22;
+                    if (dist < threshold) {
+                      setShowSnap(true);
+                      setTimeout(() => setShowSnap(false), 700);
+                    }
+                  }
+                } catch (e) { /* non-fatal */ }
+              }
+            }
           }
         } catch (err) {
           if (!isNotFoundException(err)) console.warn('decode attempt error', err);
@@ -227,7 +353,15 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
         });
         // show pulse and immediately show success overlay/card
         setLastResult(text);
-        setShowPulse(true);
+        // optionally announce for screen readers if enabled (disabled by default)
+        if (announceResults && typeof window !== 'undefined') {
+          const live = document.getElementById('dr-aria-live');
+          if (live) live.textContent = `Scanned ${text}`;
+        }
+  setShowPulse(true);
+  isHandlingRef.current = true;
+  // quick release so subsequent scans can be attempted while still showing UI feedback
+  setTimeout(() => { isHandlingRef.current = false; }, 350);
         // ensure success overlay uses autoAccepting flag for immediate display
         setAutoAccepting(true);
         try { onDetected({ type: 'barcode', value: text }); } catch (e) {}
@@ -237,6 +371,7 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
           try { onClose(); } catch (e) {}
           setAutoAccepting(false);
           setShowPulse(false);
+          isHandlingRef.current = false;
         }, 900);
         return;
       }
@@ -304,15 +439,42 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
           <button aria-label="Close camera" onClick={() => { try { codeReaderRef.current && codeReaderRef.current.reset(); } catch(e){}; onClose(); }}>Close</button>
         </div>
         <div className={`dr-camera-body ${bodySuccessClass}`}>
+          {/* guides toggle (off by default) */}
+          <div className="dr-guides-toggle">
+            <button className="dr-guides-btn" onClick={() => setShowGuides(s => !s)} aria-pressed={showGuides}>{showGuides ? 'Hide guides' : 'Show guides'}</button>
+          </div>
           <div className={`dr-camera-video-wrap ${lastResult ? 'dr-success' : ''} ${showPulse ? 'dr-pulse' : ''}`}>
+            {/* optional guides overlay */}
+            {showGuides && (
+              <div className="dr-guides-overlay" aria-hidden>
+                <div className="dr-guides-line" style={{top:'18%',left:'6%',right:'6%',height:'1px'}} />
+                <div className="dr-guides-label" style={{top:'16%',left:'8%'}}>Top guide</div>
+                <div className="dr-guides-line" style={{top:'50%',left:'8%',right:'8%',height:'1px'}} />
+                <div className="dr-guides-label" style={{top:'48%',left:'8%'}}>Center</div>
+                <div className="dr-guides-line" style={{bottom:'18%',left:'6%',right:'6%',height:'1px'}} />
+                <div className="dr-guides-label" style={{bottom:'16%',left:'8%'}}>Bottom</div>
+              </div>
+            )}
             <video ref={videoRef} className="dr-camera-video" playsInline muted />
             {!started && (
               <div className="dr-start-overlay">
-                <button className="dr-start-btn" aria-label="Start camera" onClick={() => { setError(null); setStarted(true); setRestartCount(c=>c+1); }}>Start camera</button>
+                <button className="dr-start-btn" aria-label="Start camera" onClick={() => {
+                  setError(null);
+                  setStarted(true);
+                  // on first start be more aggressive: reduce warmup by setting startedAt slightly in the past
+                  if (firstStartRef.current) {
+                    startedAtRef.current = Date.now() - 700; // effectively ~800ms warmup left
+                    firstStartRef.current = false;
+                  } else {
+                    startedAtRef.current = Date.now();
+                  }
+                  setRestartCount(c=>c+1);
+                  setTimeout(() => { try { captureFrame(); } catch(e){} }, 250);
+                }}>Start camera</button>
               </div>
             )}
             <div className="dr-target-overlay">
-              <div className={`dr-target-center ${showFailure ? 'dr-bad' : ''} ${showPulse ? 'dr-good' : ''}`} aria-hidden>
+              <div className={`dr-target-center ${showFailure ? 'dr-bad' : ''} ${showPulse ? 'dr-good' : ''} ${showSnap ? 'snap' : ''}`} aria-hidden>
                 <span className="dr-check" aria-hidden>{(showPulse || lastResult) ? '✓' : ''}</span>
               </div>
             </div>
