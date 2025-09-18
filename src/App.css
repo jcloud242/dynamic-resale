@@ -40,3 +40,33 @@
 .read-the-docs {
   color: #888;
 }
+
+:root {
+  --bg: #1C1D23; /* dark default */
+  --fg: #EAEBED;
+  --muted: rgba(234,235,237,0.7);
+  --card-bg: #2B2D31;
+  --logo-fg: #dbeeea;
+  --elevation: 0 6px 18px rgba(0,0,0,0.35);
+  --input-elev: 0 2px 6px rgba(0,0,0,0.3);
+  --accent: #ED254E;
+  --accent-fg: #fff;
+}
+
+/* motion and focus tokens - keep small and hardware friendly */
+:root { --focus-ring: rgba(37, 99, 235, 0.18); --motion-duration: 160ms; }
+
+/* light theme */
+:root[data-theme='light'] {
+  --bg: #EAEBED;
+  --fg: #1C2826;
+  --muted: rgba(28,40,38,0.6);
+  --card-bg: #ffffff;
+  --logo-fg: #1c2826;
+  --elevation: 0 6px 18px rgba(28,40,38,0.06);
+  --input-elev: 0 2px 6px rgba(28,40,38,0.06);
+  --accent: #ED254E;
+  --accent-fg: #fff;
+}
+
+body { background: var(--bg); color: var(--fg); }

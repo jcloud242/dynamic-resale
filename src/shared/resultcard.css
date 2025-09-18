@@ -1,8 +1,24 @@
-.dr-resultcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;background:#07101a;color:#e6eef8;margin-bottom:8px}
-.dr-thumb{width:64px;height:64px;border-radius:6px;object-fit:cover}
+.dr-resultcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:var(--card-bg);color:var(--fg);margin-bottom:10px;box-shadow:var(--input-elev)}
+.dr-resultcard{transition:transform var(--motion-duration) ease, box-shadow var(--motion-duration) ease}
+.dr-thumb{width:64px;height:64px;border-radius:8px;object-fit:cover}
 .dr-main{flex:1}
-.dr-title{font-weight:600}
-.dr-meta{font-size:12px;color:#9aa7b2}
+.dr-title{font-weight:700}
+.dr-badge{background:rgba(0,0,0,0.08);color:var(--fg);font-size:12px;padding:4px 8px;border-radius:999px}
+.dr-meta{font-size:12px;color:var(--muted);text-align:left}
 .dr-stats{text-align:right}
+.dr-meta-sub{text-align:left}
 .dr-avg{font-weight:700;font-size:18px}
-.dr-minmax{font-size:12px;color:#9aa7b2}
+.dr-minmax{font-size:12px;color:var(--muted)}
+
+/* cached badge removed — kept intentionally empty for future UX flags */
+.dr-loading{padding:12px;margin:8px 0;background:var(--accent);color:var(--accent-fg);border-radius:8px}
+.dr-error{padding:12px;margin:8px 0;background:#b84b4b;color:#fff;border-radius:8px}
+.dr-meta-sub{font-size:12px;color:var(--muted);margin-top:4px}
+.dr-refresh{margin-left:6px;background:var(--accent);color:var(--accent-fg);border:none;padding:6px 8px;border-radius:6px;cursor:pointer}
+.dr-refresh:disabled{opacity:0.6;cursor:default}
+.dr-toast{margin-left:8px;font-size:12px;color:var(--muted)}
+
+.dr-filter-note{font-size:12px;color:var(--muted);margin-top:6px}
+
+.dr-resultcard:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.12)}
+.dr-resultcard:focus-within{box-shadow:0 12px 30px rgba(0,0,0,0.08);outline:none}

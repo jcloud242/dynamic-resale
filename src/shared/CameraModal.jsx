@@ -225,7 +225,8 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
   // small center (zoom)
   const cw2 = Math.floor(canvas.width * 0.4);
   const ch2 = Math.floor(canvas.height * 0.25);
-  crops.push({ x: Math.floor((canvas.width - cw2) / 2), y: Math.floor((canvas.height - ch2) / 2), w: cw2, h: ch2 });
+  // mark this crop as 'preferRotate' for milder CPU rotation attempts
+  crops.push({ x: Math.floor((canvas.width - cw2) / 2), y: Math.floor((canvas.height - ch2) / 2), w: cw2, h: ch2, preferRotate: true });
 
       const zx = await import('@zxing/browser');
       const { BrowserMultiFormatReader } = zx;
@@ -243,9 +244,9 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
           if (typeof reader.decodeFromImage === 'function') {
             const dataUrl = tmp.toDataURL('image/png');
             let r = await reader.decodeFromImage(undefined, dataUrl);
-            if (!r) {
-              // try rotated attempts (mild angles) for tilted barcodes
-              for (const ang of [7, -7, 14, -14]) {
+            if (!r && c.preferRotate) {
+              // try mild rotated attempts (±7°) only for the small center crop
+              for (const ang of [7, -7]) {
                 try {
                   const rot = document.createElement('canvas');
                   const rw = tmp.width, rh = tmp.height;
@@ -289,9 +290,9 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
             }
           } else if (typeof reader.decodeFromCanvas === 'function') {
             let r = await reader.decodeFromCanvas(tmp);
-            if (!r) {
-              // try rotated canvas decodes
-              for (const ang of [7, -7, 14, -14]) {
+            if (!r && c.preferRotate) {
+              // try mild rotated canvas decodes only for the small center crop
+              for (const ang of [7, -7]) {
                 try {
                   const rot = document.createElement('canvas');
                   const rw = tmp.width, rh = tmp.height;

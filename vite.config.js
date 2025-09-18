@@ -7,11 +7,14 @@ export default defineConfig({
   server: {
     host: true, // bind to 0.0.0.0 so localhost resolves consistently (IPv4/IPv6)
     port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5001',
-        changeOrigin: true,
-      },
-    },
+    proxy: (() => {
+      const backendPort = process.env.BACKEND_PORT || process.env.PORT || '5001';
+      return {
+        '/api': {
+          target: `http://localhost:${backendPort}`,
+          changeOrigin: true,
+        },
+      };
+    })(),
   },
 })

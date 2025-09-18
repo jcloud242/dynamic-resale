@@ -1,5 +1,17 @@
-.dr-home{padding:16px;padding-bottom:80px}
+.dr-home{padding:16px;padding-bottom:100px}
 .dr-actions{display:flex;flex-direction:column;gap:12px}
 .dr-scan-buttons{display:flex;gap:8px}
-.dr-scan-buttons button{padding:10px;border-radius:8px;border:0;background:#111827;color:#e6eef8}
+.dr-scan-buttons button{padding:10px;border-radius:10px;border:0;background:var(--card-bg);color:var(--fg);box-shadow:var(--input-elev)}
 .dr-results{margin-top:16px}
+
+/* Recent list wrapper with dynamic visible rows and vertical scrollbar */
+.dr-recent-header{display:flex;align-items:center;gap:8px}
+.dr-history-btn{background:transparent;border:0;padding:0;display:flex;align-items:center;gap:8px;color:var(--fg);cursor:pointer}
+.dr-history-btn svg{color:inherit}
+.dr-recent-wrapper{max-height:calc(var(--recent-row-height,96px) * 4 + 12px);overflow-y:auto;padding-right:6px;margin-top:8px}
+.dr-recent-wrapper.small{max-height:calc(var(--recent-row-height,96px) * 3 + 12px)}
+
+/* Simple scrollbar styling for WebKit */
+.dr-recent-wrapper::-webkit-scrollbar{width:8px}
+.dr-recent-wrapper::-webkit-scrollbar-thumb{background:#2B2D31;border-radius:8px}
+.dr-recent-wrapper::-webkit-scrollbar-track{background:transparent}

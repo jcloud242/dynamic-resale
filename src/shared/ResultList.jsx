@@ -1,6 +1,7 @@
 import React from 'react';
 import ResultCard from './ResultCard.jsx';
 
+
 export default function ResultList({ items = [] }) {
   return (
     <div className="dr-resultlist">

@@ -40,6 +40,18 @@ Notes:
 - Add your eBay credentials to a `.env` file at the repo root or in `server/` when you implement real API calls.
 - The frontend proxies `/api` to `http://localhost:5001` via `vite.config.js`, so the frontend can call `/api/search`.
 
+Redis migration (short backlog):
+- **Env changes**: add `REDIS_URL` and optionally `REDIS_TLS` to `.env` and deployment config.
+- **Cache key strategy**: prefix keys with `search:` and include query normalized (lowercase, trimmed). Example: `search:123456789012`.
+- **TTL strategy**: short TTL for barcode scans (30s) and longer TTL for manual searches (5-15 minutes). Consider a separate prefix for manual vs scan-based cache.
+- **Infrastructure notes**: use managed Redis (e.g., AWS ElastiCache, Azure Cache, or Redis Cloud). Enable TLS and AUTH in production. Add connection retries and exponential backoff.
+- **Migration steps**: install `ioredis`, add a thin cache wrapper that falls back to in-memory when Redis is unreachable, update `server/index.js` to use Redis for `getCache/setCache`, and run integration tests.
+
+Caching Recommendation (local / small user base):
+- **Use in-memory cache**: For this project (local laptop or small group of users), the current in-memory Map cache provides the best ROI — zero hosting cost, zero external dependencies, and simpler setup.
+- **When to consider Redis**: If you scale to multiple server instances, or need persistence across restarts, move to Redis (managed or self-hosted). For occasional production use you can enable Redis later with minimal changes.
+- **How to enable Redis later**: set `REDIS_URL` in `.env`, install `ioredis`, and swap `getCache/setCache` to a thin wrapper that prefers Redis but falls back to the `Map` when Redis is unavailable.
+
 Next steps (recommended):
 - Implement real eBay API integration in `/server/index.js` using `getEbayAppToken()`.
 - Add barcode scanner UI + camera permission flow in `src/pages/Home.jsx`.
