@@ -162,7 +162,7 @@ function filterOutlierPrices(prices = []) {
 }
 
 // Use eBay Finding API to retrieve completed items (legacy AppID required)
-async function findCompletedItemsViaFindingAPI(query, appId) {
+async function findCompletedItemsViaFindingAPI(query, appId, entriesPerPage = 25) {
   if (!appId) throw new Error('missing-finding-appid');
   const url = 'https://svcs.ebay.com/services/search/FindingService/v1';
   const params = {
@@ -171,7 +171,7 @@ async function findCompletedItemsViaFindingAPI(query, appId) {
     'RESPONSE-DATA-FORMAT': 'JSON',
     'REST-PAYLOAD': 'true',
     'keywords': query,
-    'paginationInput.entriesPerPage': 25,
+    'paginationInput.entriesPerPage': Math.min(entriesPerPage, 200),
   };
   const headers = {
     'X-EBAY-SOA-SECURITY-APPNAME': appId,
@@ -308,7 +308,7 @@ app.post('/api/search', async (req, res) => {
 
       // call eBay Browse API to search item summaries using axios with retry (fallback and listing source)
       const q = encodeURIComponent(query);
-      const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=10`;
+  const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=30`;
       console.log('[search] calling eBay Browse API', url);
       const r = await axiosGetWithRetry(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
       if (!r || (r.status && r.status >= 400)) {
@@ -332,8 +332,28 @@ app.post('/api/search', async (req, res) => {
   // keep raw copy for transparency
   const soldListingsRaw = priceSource.slice();
   // filter graded/collector listings from the price aggregation and returned soldListings
-  const filteredSource = priceSource.filter((it) => !isGradedListing(it));
-  console.log('[search] priceSource length=', priceSource && priceSource.length);
+  const nonGraded = soldListingsRaw.filter((it) => !isGradedListing(it));
+  console.log('[search] priceSource length=', priceSource && priceSource.length, 'nonGraded=', nonGraded.length);
+
+  // Aim to base prices on up to `desiredCount` non-graded sold listings. If we don't
+  // have enough non-graded results, attempt to fetch additional completed items
+  // (when using Finding API) or rely on a larger Browse API result set.
+  const desiredCount = 10;
+  let filteredSource = nonGraded.slice(0, desiredCount);
+  if (filteredSource.length < desiredCount && findingAppId && (!completedListings || completedListings.length)) {
+    try {
+      // try to fetch more completed items (up to 100) and recompute
+      const moreCompleted = await findCompletedItemsViaFindingAPI(query, findingAppId, 100).catch(() => []);
+      if (moreCompleted && moreCompleted.length) {
+        const combined = (completedListings || []).concat(moreCompleted);
+        const combinedRaw = combined.slice();
+        const combinedNonGraded = combinedRaw.filter((it) => !isGradedListing(it));
+        filteredSource = combinedNonGraded.slice(0, desiredCount);
+      }
+    } catch (e) {
+      console.warn('[search] extra Finding API fetch failed', e && e.message);
+    }
+  }
 
       // Attempt to fetch detailed item info for the top Browse item to surface item specifics
       let topItemDetails = null;
@@ -451,6 +471,9 @@ app.post('/api/search', async (req, res) => {
         releaseYear: detailsExtract.releaseYear || null,
   // expose filtered soldListings (hide graded/collector items) for frontend parsing
   soldListings: filteredSource,
+  // explicit sample size used for price aggregation and graded omitted count for UI copy
+  sampleSize: Array.isArray(filteredSource) ? filteredSource.length : 0,
+  gradedOmitted: nGraded,
   // keep raw list for debugging if needed
   soldListingsRaw: soldListingsRaw,
   rawCount,

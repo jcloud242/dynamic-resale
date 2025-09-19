@@ -1,10 +1,10 @@
 
 :root{
-	--dr-bg: rgba(2,6,23,0.72);
+	--dr-bg: rgba(2,6,23,0.25);
 	--dr-modal-bg: #07121a;
 	--dr-accent: #e6eef8;
-	--dr-success: 56,142,60; /* used as rgb parts */
-	--dr-failure: 211,47,47;
+	--dr-success: 56,255,60; /* used as rgb parts */
+	--dr-failure: 255,61,91;
 	--dr-target-size: 220px; /* increased default to make detection zone larger */
 }
 
@@ -29,7 +29,7 @@
 .dr-camera-video-wrap{position:relative;border-radius:10px;overflow:hidden}
 .dr-target-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .dr-target-center{width:clamp(260px,72%,92%);height:clamp(140px,22%,46%);border:2px dashed rgba(255,255,255,0.18);border-radius:12px;display:flex;align-items:center;justify-content:center;transition:transform 200ms cubic-bezier(.2,.9,.3,1),background-color 200ms ease,border-color 200ms ease,box-shadow 200ms ease;transform-origin:center}
-.dr-camera-video-wrap.dr-success .dr-target-center{border-color: rgba(var(--dr-success),0.9);box-shadow:0 8px 26px rgba(56,142,60,0.22)}
+.dr-camera-video-wrap.dr-success .dr-target-center{border-color: rgba(var(--dr-success),0.9);box-shadow:0 8px 26px rgba(56,255,60,0.85)}
 
 .dr-target-center.dr-good{border-color:rgba(var(--dr-success),0.98);box-shadow:0 0 26px rgba(56,142,60,0.34);background:rgba(56,142,60,0.06);transform:scale(1.08)}
 .dr-target-center.dr-bad{border-color:rgba(var(--dr-failure),0.98);box-shadow:0 0 16px rgba(211,47,47,0.16);transform:scale(0.98)}

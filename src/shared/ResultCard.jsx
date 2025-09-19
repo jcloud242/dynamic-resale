@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import "./resultcard.css";
 import { postSearchForce } from "../services/api.js";
 import { formatResultTitle } from "./titleHelpers.js";
+import { LuInfo } from "react-icons/lu";
 
 export default function ResultCard({ item }) {
   if (!item) return null;
@@ -17,6 +18,8 @@ export default function ResultCard({ item }) {
     : null;
   const [loadingRefresh, setLoadingRefresh] = useState(false);
   const [toast, setToast] = useState(null);
+  const [omitHelp, setOmitHelp] = useState(null);
+  const INFO_AUTO_HIDE_MS = 3000;
 
   async function handleRefresh() {
     const query = itemState.query || itemState.upc;
@@ -37,6 +40,19 @@ export default function ResultCard({ item }) {
   }
   const { displayTitle, meta } = formatResultTitle(itemState);
   const metaLine = meta;
+  // compute omitted count defensively (supports cached responses)
+  const rawLen =
+    (Array.isArray(itemState.soldListingsRaw) &&
+      itemState.soldListingsRaw.length) ||
+    itemState.rawCount ||
+    0;
+  const shownLen =
+    (Array.isArray(itemState.soldListings) && itemState.soldListings.length) ||
+    0;
+  const omittedCount =
+    typeof itemState.filteredCount === "number"
+      ? itemState.filteredCount
+      : Math.max(0, rawLen - shownLen);
   return (
     <div className="dr-resultcard">
       <img
@@ -47,12 +63,6 @@ export default function ResultCard({ item }) {
       <div className="dr-main">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div className="dr-title">{displayTitle}</div>
-          {itemState.rawCount !== undefined && (
-            <div className="dr-badge">
-              Showing {itemState.rawCount - (itemState.filteredCount || 0)} of{" "}
-              {itemState.rawCount}
-            </div>
-          )}
         </div>
         <div className="dr-meta">{metaLine}</div>
         <div className="dr-meta-sub">{ts}</div>
@@ -68,25 +78,32 @@ export default function ResultCard({ item }) {
         </div>
       </div>
       <div className="dr-stats">
-        <div className="dr-avg">${fmt(itemState.avgPrice)}</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:8}}>
+          <button
+            className="dr-avg-info"
+            aria-label="Show price info"
+            onClick={() => {
+              const soldCount = Array.isArray(itemState.soldListings) && itemState.soldListings.length ? itemState.soldListings.length : (itemState.sampleSize || 0);
+              const gradedCount = (itemState.filteredBreakdown && itemState.filteredBreakdown.graded) || (itemState.gradedOmitted || 0);
+              const n = soldCount || 10;
+              let text = `*Average price based on the last ${n} sold`;
+              if (gradedCount > 0) text += ` (Excludes ${gradedCount} graded listings)`;
+              // fallback note when we couldn't reach desired sample size
+              if ((itemState.sampleSize || 0) > 0 && (itemState.sampleSize || 0) < 10) {
+                text += ` — only ${itemState.sampleSize} available`;
+              }
+              setOmitHelp(omitHelp ? null : text);
+              if (!omitHelp) setTimeout(() => setOmitHelp(null), INFO_AUTO_HIDE_MS);
+            }}
+          >
+            <LuInfo size={10} />
+          </button>
+          <div className="dr-avg">${fmt(itemState.avgPrice)}</div>
+        </div>
         <div className="dr-minmax">
           Min ${fmt(itemState.minPrice)} • Max ${fmt(itemState.maxPrice)}
         </div>
-        {/* compact sample size + omission note with tooltip when necessary */}
-        {Array.isArray(itemState.soldListings) && itemState.soldListings.length > 0 ? (
-          <div className="dr-filter-note">* based on last {itemState.soldListings.length} sold</div>
-        ) : itemState.rawCount ? (
-          <div className="dr-filter-note">* based on last {itemState.rawCount} listings</div>
-        ) : null}
-
-        {itemState.filteredCount > 0 && (
-          <div
-            className="dr-filter-note"
-            title={`Filtered ${itemState.filteredCount} listings (graded or collector items omitted). Graded filtering coming soon.`}
-          >
-            * {itemState.filteredCount} listings omitted (eg. graded)
-          </div>
-        )}
+        {omitHelp && <div className="dr-omit-inline">{omitHelp}</div>}
       </div>
     </div>
   );

@@ -15,3 +15,10 @@
 .dr-recent-wrapper::-webkit-scrollbar{width:8px}
 .dr-recent-wrapper::-webkit-scrollbar-thumb{background:#2B2D31;border-radius:8px}
 .dr-recent-wrapper::-webkit-scrollbar-track{background:transparent}
+
+/* Always-visible visual cue: faux scrollbar + subtle left accent so the panel reads
+	as a scannable scroll area even when content doesn't overflow. This is a visual
+	hint and does not affect interactivity (pointer-events: none). */
+.dr-recent-wrapper{position:relative}
+.dr-recent-wrapper::after, .dr-recent-wrapper::before{content:none}
+.dr-recent-wrapper{box-shadow:none}
