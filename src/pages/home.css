@@ -2,6 +2,10 @@
 .dr-actions{display:flex;flex-direction:column;gap:12px}
 .dr-scan-buttons{display:flex;gap:8px}
 .dr-scan-buttons button{padding:10px;border-radius:10px;border:0;background:var(--card-bg);color:var(--fg);box-shadow:var(--input-elev)}
+/* Clear Recent button polish: match hover/focus behavior used elsewhere */
+.dr-clear{border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);cursor:pointer;transition:border-color 120ms ease, box-shadow 160ms ease}
+.dr-clear:hover{border-color:#646cff}
+.dr-clear:focus-visible{outline:none;box-shadow:0 0 0 4px var(--focus-ring)}
 .dr-results{margin-top:16px}
 
 /* Recent list wrapper with dynamic visible rows and vertical scrollbar */
