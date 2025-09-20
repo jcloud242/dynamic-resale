@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './searchbar.css';
-import { LuScanBarcode, LuSearch, LuCamera } from 'react-icons/lu';
+import { LuScanBarcode, LuSearch} from 'react-icons/lu';
+import { RiCameraAiLine } from "react-icons/ri";
 
 
 export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
@@ -17,7 +18,7 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
     <form className="dr-searchbar" onSubmit={submit}>
       <div className="dr-scan-actions">
         <button type="button" className="dr-scan-icon" aria-label="Scan barcode" onClick={() => onOpenCamera && onOpenCamera()}><LuScanBarcode size={24} /></button>
-        <button type="button" className="dr-photo-icon" aria-label="Image lookup" onClick={() => onOpenImage && onOpenImage()}><LuCamera size={24} /></button>
+        <button type="button" className="dr-photo-icon" aria-label="Image lookup" onClick={() => onOpenImage && onOpenImage()}><RiCameraAiLine  size={24} /></button>
       </div>
       <input
         placeholder="Search title, UPC, ISBN..."

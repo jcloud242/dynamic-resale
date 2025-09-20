@@ -83,15 +83,24 @@ export default function ResultCard({ item }) {
             className="dr-avg-info"
             aria-label="Show price info"
             onClick={() => {
-              const soldCount = Array.isArray(itemState.soldListings) && itemState.soldListings.length ? itemState.soldListings.length : (itemState.sampleSize || 0);
+              const used = (typeof itemState.sampleSize === 'number' && itemState.sampleSize >= 0)
+                ? itemState.sampleSize
+                : (Array.isArray(itemState.soldListings) ? itemState.soldListings.length : 0);
+              const raw = (typeof itemState.rawCount === 'number' && itemState.rawCount >= 0)
+                ? itemState.rawCount
+                : (Array.isArray(itemState.soldListingsRaw) ? itemState.soldListingsRaw.length : 0);
               const gradedCount = (itemState.filteredBreakdown && itemState.filteredBreakdown.graded) || (itemState.gradedOmitted || 0);
-              const n = soldCount || 10;
-              let text = `*Average price based on the last ${n} sold`;
-              if (gradedCount > 0) text += ` (Excludes ${gradedCount} graded listings)`;
-              // fallback note when we couldn't reach desired sample size
-              if ((itemState.sampleSize || 0) > 0 && (itemState.sampleSize || 0) < 10) {
-                text += ` — only ${itemState.sampleSize} available`;
+              let text = '';
+              if (used > 0) {
+                if (raw && raw > used) {
+                  text = `*Average price based on ${used} sold`;
+                } else {
+                  text = `*Average price based on ${used} sold`;
+                }
+              } else {
+                text = '*Average price could not be computed (no usable sold listings)';
               }
+              if (gradedCount > 0) text += ` — excludes ${gradedCount} graded listings`;
               setOmitHelp(omitHelp ? null : text);
               if (!omitHelp) setTimeout(() => setOmitHelp(null), INFO_AUTO_HIDE_MS);
             }}

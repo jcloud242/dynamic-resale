@@ -1,7 +1,7 @@
 
 :root{
 	--dr-bg: rgba(2,6,23,0.25);
-	--dr-modal-bg: #07121a;
+	--dr-modal-bg: #1C1D23;
 	--dr-accent: #e6eef8;
 	--dr-success: 56,255,60; /* used as rgb parts */
 	--dr-failure: 255,61,91;

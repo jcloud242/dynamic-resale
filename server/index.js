@@ -338,7 +338,7 @@ app.post('/api/search', async (req, res) => {
   // Aim to base prices on up to `desiredCount` non-graded sold listings. If we don't
   // have enough non-graded results, attempt to fetch additional completed items
   // (when using Finding API) or rely on a larger Browse API result set.
-  const desiredCount = 10;
+  const desiredCount = 20;
   let filteredSource = nonGraded.slice(0, desiredCount);
   if (filteredSource.length < desiredCount && findingAppId && (!completedListings || completedListings.length)) {
     try {
