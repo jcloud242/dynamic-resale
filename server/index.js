@@ -71,29 +71,39 @@ function cleanListingTitleForName(t) {
 }
 
 function detectPlatformFromListings(listings = []) {
+  // Infer platform by majority vote across listing titles (more robust than first-match)
   if (!Array.isArray(listings)) return null;
-  const tokens = ['Nintendo Switch','Switch','PS5','PS4','PlayStation 5','PlayStation 4','Xbox Series X','Xbox One','Wii U','3DS','PC'];
+  // ordered map of regex -> normalized platform label
+  const platformPatterns = [
+    { re: /\b(nintendo\s+switch|nintendo|switch)\b/i, label: 'Nintendo Switch' },
+    { re: /\b(ps5|playstation\s*5|playstation5)\b/i, label: 'PS5' },
+    { re: /\b(ps4|playstation\s*4|playstation4)\b/i, label: 'PS4' },
+    { re: /\b(xbox\s*series\s*x|xbox\s*seriesx)\b/i, label: 'Xbox Series X' },
+    { re: /\b(xbox\s*one)\b/i, label: 'Xbox One' },
+    { re: /\b(wii\s*u|wiiu)\b/i, label: 'Wii U' },
+    { re: /\b(wii)\b/i, label: 'Wii' },
+    { re: /\b(3ds|nintendo\s+3ds)\b/i, label: '3DS' },
+    { re: /\b(pc|steam)\b/i, label: 'PC' },
+  ];
+
+  const counts = Object.create(null);
+  for (const p of platformPatterns) counts[p.label] = 0;
+
   for (const l of listings) {
-    if (!l || !l.title) continue;
-    const t = l.title;
-    for (const token of tokens) {
-      const re = new RegExp(`\\b${token.replace(/\s+/g,'\\s+')}\\b`, 'i');
-      if (re.test(t)) {
-        // normalize
-        const s = token.toLowerCase();
-        if (s.includes('playstation 5') || token === 'PS5') return 'PS5';
-        if (s.includes('playstation 4') || token === 'PS4') return 'PS4';
-        if (s.includes('nintendo switch') || token.toLowerCase().includes('switch')) return 'Nintendo Switch';
-        if (s.includes('xbox series x')) return 'Xbox Series X';
-        if (s.includes('xbox one')) return 'Xbox One';
-        if (s.includes('wii u')) return 'Wii U';
-        if (s.includes('3ds')) return '3DS';
-        if (s.includes('pc')) return 'PC';
-        return token;
-      }
+    if (!l) continue;
+    const t = (l.title || '') + ' ' + ((l.subtitle || '') || '');
+    for (const p of platformPatterns) {
+      if (p.re.test(t)) counts[p.label] = (counts[p.label] || 0) + 1;
     }
   }
-  return null;
+
+  // pick label with highest count (must be >0)
+  let best = null;
+  let bestCount = 0;
+  for (const k of Object.keys(counts)) {
+    if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+  }
+  return bestCount > 0 ? best : null;
 }
 
 function isGradedListing(l) {

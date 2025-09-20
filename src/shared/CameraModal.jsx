@@ -8,6 +8,8 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [pendingAutoResult, setPendingAutoResult] = useState(null);
+  // buffer for last successful detections to require short repeat-confirmation
+  const recentDetectionsRef = useRef([]);
   const canvasRef = useRef(null);
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
@@ -22,6 +24,8 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
   const [showFailure, setShowFailure] = useState(false);
   const [autoAccepting, setAutoAccepting] = useState(false);
   const autoAcceptTimeoutRef = useRef(null);
+  // lightweight scan stats state (kept minimal)
+  const [scanStats, setScanStats] = useState({ attempts: 0, successes: 0, failures: 0 });
   const startedAtRef = useRef(0);
   const failureStreakRef = useRef(0);
   const [GRACE_PERIOD_MS, setGracePeriodMs] = useState(1800);
@@ -86,16 +90,40 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
                   setError(null);
                   setBrightnessHint(null);
                 if (mode === 'barcode') {
-                  setAutoAccepting(true);
-                  try { onDetected({ type: 'barcode', value: text }); } catch (e) {}
-                    setError(null);
-                    setBrightnessHint(null);
-                  if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
-                  autoAcceptTimeoutRef.current = setTimeout(() => {
-                    try { onClose(); } catch (e) {}
+                  // basic sanitization: ignore short or non-numeric scans
+                  const sanitized = String(text).replace(/[^0-9]/g, '');
+                  if (sanitized.length < 8) {
+                    // likely partial/malformed read — ignore
                     setAutoAccepting(false);
                     isHandlingRef.current = false;
-                  }, 900);
+                  } else {
+                    // optional UPC/EAN checksum validation for 12/13/8-digit codes
+                    const isChecksumValid = validateUpcChecksum(sanitized);
+                    if (!isChecksumValid) {
+                      // don't auto-accept immediately; treat as a soft-detection
+                      // push to recentDetections and require a quick repeat to confirm
+                      recentDetectionsRef.current.push({ code: sanitized, ts: Date.now() });
+                      // keep only last 5 entries
+                      recentDetectionsRef.current = recentDetectionsRef.current.slice(-5);
+                      setAutoAccepting(true);
+                      // if the same code appears twice within 1200ms, accept it
+                      const sameRecent = recentDetectionsRef.current.filter(d => d.code === sanitized && (Date.now() - d.ts) < 1200);
+                      if (sameRecent.length >= 2) {
+                        try { onDetected({ type: 'barcode', value: sanitized }); } catch (e) {}
+                        if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
+                        autoAcceptTimeoutRef.current = setTimeout(() => { try { onClose(); } catch (e) {}; setAutoAccepting(false); isHandlingRef.current = false; }, 800);
+                      } else {
+                        // wait a short period then clear autoAccepting to keep UX snappy
+                        setTimeout(() => { setAutoAccepting(false); isHandlingRef.current = false; }, 700);
+                      }
+                    } else {
+                      // checksum OK — accept immediately but still set a short auto-accept timeout
+                      setAutoAccepting(true);
+                      try { onDetected({ type: 'barcode', value: sanitized }); } catch (e) {}
+                      if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
+                      autoAcceptTimeoutRef.current = setTimeout(() => { try { onClose(); } catch (e) {}; setAutoAccepting(false); isHandlingRef.current = false; }, 900);
+                    }
+                  }
                 } else {
                   // keep confirm flow for non-barcode modes
                   setPendingAutoResult(text);
@@ -364,16 +392,39 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
   // quick release so subsequent scans can be attempted while still showing UI feedback
   setTimeout(() => { isHandlingRef.current = false; }, 350);
         // ensure success overlay uses autoAccepting flag for immediate display
-        setAutoAccepting(true);
-        try { onDetected({ type: 'barcode', value: text }); } catch (e) {}
-        try { reader.reset(); } catch (e) {}
-        if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
-        autoAcceptTimeoutRef.current = setTimeout(() => {
-          try { onClose(); } catch (e) {}
-          setAutoAccepting(false);
-          setShowPulse(false);
-          isHandlingRef.current = false;
-        }, 900);
+        // sanitize numeric-only code
+        const sanitized = String(text).replace(/[^0-9]/g, '');
+        const isChecksumValid = validateUpcChecksum(sanitized);
+        if (sanitized.length >= 8 && isChecksumValid) {
+          setAutoAccepting(true);
+          try { onDetected({ type: 'barcode', value: sanitized }); } catch (e) {}
+          try { reader.reset(); } catch (e) {}
+          if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
+          autoAcceptTimeoutRef.current = setTimeout(() => {
+            try { onClose(); } catch (e) {}
+            setAutoAccepting(false);
+            setShowPulse(false);
+            isHandlingRef.current = false;
+          }, 900);
+          // record confirmed detection
+          recentDetectionsRef.current.push({ code: sanitized, ts: Date.now() });
+          recentDetectionsRef.current = recentDetectionsRef.current.slice(-5);
+        } else {
+          // fallback: require a quick repeat detection to confirm
+          recentDetectionsRef.current.push({ code: sanitized, ts: Date.now() });
+          recentDetectionsRef.current = recentDetectionsRef.current.slice(-5);
+          const sameRecent = recentDetectionsRef.current.filter(d => d.code === sanitized && (Date.now() - d.ts) < 1200);
+          if (sameRecent.length >= 2) {
+            try { onDetected({ type: 'barcode', value: sanitized }); } catch (e) {}
+            try { reader.reset(); } catch (e) {}
+            if (autoAcceptTimeoutRef.current) clearTimeout(autoAcceptTimeoutRef.current);
+            autoAcceptTimeoutRef.current = setTimeout(() => { try { onClose(); } catch (e) {}; setAutoAccepting(false); setShowPulse(false); isHandlingRef.current = false; }, 800);
+          } else {
+            // show a soft success but keep scanning
+            setAutoAccepting(true);
+            setTimeout(() => { setAutoAccepting(false); setShowPulse(false); isHandlingRef.current = false; }, 700);
+          }
+        }
         return;
       }
       // failure: increment failure streak and only show error after configured threshold
@@ -399,6 +450,35 @@ export default function CameraModal({ mode = 'barcode', onClose, onDetected }) {
     } catch (e) {
       return false;
     }
+  }
+
+  // Validate UPC/EAN checksum for common lengths (8,12,13) — returns true if checksum matches.
+  function validateUpcChecksum(code) {
+    if (!code || typeof code !== 'string') return false;
+    const digits = code.replace(/[^0-9]/g, '');
+    if (![8,12,13].includes(digits.length)) return false;
+    const nums = digits.split('').map(d => parseInt(d,10));
+    if (digits.length === 8) {
+      // EAN-8 checksum
+      const check = nums.pop();
+      let sum = 0;
+      for (let i = 0; i < nums.length; i++) {
+        const pos = nums.length - i;
+        sum += nums[i] * (pos % 2 === 0 ? 3 : 1);
+      }
+      const calc = (10 - (sum % 10)) % 10;
+      return calc === check;
+    }
+    // EAN-13 / UPC-A
+    const check = nums.pop();
+    let sum = 0;
+    for (let i = 0; i < nums.length; i++) {
+      // from left: multiply odd positions by 1, even by 3 (for EAN-13)
+      const pos = nums.length - i;
+      sum += nums[i] * (pos % 2 === 0 ? 3 : 1);
+    }
+    const calc = (10 - (sum % 10)) % 10;
+    return calc === check;
   }
 
   // wait for at least one video frame to be available (returns after timeout ms)
