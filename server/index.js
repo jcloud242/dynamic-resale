@@ -455,8 +455,8 @@ app.post('/api/search', async (req, res) => {
       };
       // ensure we have a concise gameName
       const candidateGameName = chooseBestGameName(priceSource, detailsExtract);
-  // if platform not in detailsExtract, try to infer from soldListings
-  const inferredPlatform = detailsExtract.platform || detectPlatformFromListings(priceSource) || null;
+      // prefer majority-vote inference from listings; fall back to extracted top-item platform
+      const inferredPlatform = detectPlatformFromListings(priceSource) || detailsExtract.platform || null;
 
   // compute counts for transparency
   const rawCount = soldListingsRaw.length;
