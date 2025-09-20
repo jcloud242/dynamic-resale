@@ -91,9 +91,13 @@ function detectPlatformFromListings(listings = []) {
 
   for (const l of listings) {
     if (!l) continue;
-    const t = (l.title || '') + ' ' + ((l.subtitle || '') || '');
+    const t = ((l.title || '') + ' ' + ((l.subtitle || '') || '')).trim();
+    // prefer the first matching token per listing (prevents double-counting)
     for (const p of platformPatterns) {
-      if (p.re.test(t)) counts[p.label] = (counts[p.label] || 0) + 1;
+      if (p.re.test(t)) {
+        counts[p.label] = (counts[p.label] || 0) + 1;
+        break;
+      }
     }
   }
 
