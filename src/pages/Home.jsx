@@ -122,15 +122,28 @@ export default function Home() {
   }
 
   function handleDetected(payload) {
+    // detection forwarded from CameraModal
     // Convert payload to a query and run search
     if (payload.type === 'barcode') {
       handleSearch(payload.value, { silentRefresh: true, suppressCachedBadge: true, showPlaceholder: true }).catch((e) => {
         console.error('Search failed', e);
       });
     } else if (payload.type === 'image') {
-      handleSearch(payload.value, { silentRefresh: true, suppressCachedBadge: true, showPlaceholder: true }).catch((e) => {
-        console.error('Search failed', e);
-      });
+      // For now, mock an image-result so recent list shows a thumbnail instead of the raw data URL
+      const mock = {
+        query: 'image-capture',
+        title: 'Photo lookup',
+        upc: 'image-capture',
+        thumbnail: payload.value,
+        avgPrice: null,
+        minPrice: null,
+        maxPrice: null,
+        soldListings: [],
+        fetchedAt: new Date().toISOString(),
+      };
+      // show as active and save into recent list for quick inspection
+      setActive(mock);
+      saveRecent(mock);
     }
   }
 
@@ -143,6 +156,7 @@ export default function Home() {
           onOpenImage={() => setCamera({ open: true, mode: 'image' })}
         />
       </div>
+      
 
       <section className="dr-results">
         {loading && <div className="dr-loading">Searching…</div>}

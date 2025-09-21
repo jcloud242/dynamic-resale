@@ -1,74 +1,455 @@
-
-:root{
-	--dr-bg: rgba(2,6,23,0.25);
-	--dr-modal-bg: #1C1D23;
-	--dr-accent: #e6eef8;
-	--dr-success: 56,255,60; /* used as rgb parts */
-	--dr-failure: 255,61,91;
-	--dr-target-size: 220px; /* increased default to make detection zone larger */
+:root {
+  --dr-bg: rgba(2, 6, 23, 0.25);
+  --dr-modal-bg: #1c1d23;
+  --dr-accent: #e6eef8;
+  --dr-success: 56, 255, 60; /* used as rgb parts */
+  --dr-failure: 255, 61, 91;
+  --dr-target-size: 220px; /* increased default to make detection zone larger */
+  /* frame size defaults (percent of video) */
+  --frame-w: 72%;
+  --frame-h: 42%;
 }
 
-.dr-camera-overlay{
-	position:fixed;
-	inset:0;
-	background:var(--dr-bg);
-	display:flex;
-	align-items:center;
-	justify-content:center;
-	z-index:60;
-	-webkit-font-smoothing:antialiased;
+.dr-camera-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--dr-bg);
+  backdrop-filter: blur(6px) saturate(110%);
+  -webkit-backdrop-filter: blur(6px) saturate(110%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  -webkit-font-smoothing: antialiased;
 }
-.dr-camera-modal{width:92%;max-width:520px;background:var(--dr-modal-bg);border-radius:12px;padding:14px;color:var(--dr-accent)}
-.dr-camera-header{display:flex;justify-content:space-between;align-items:center}
-.dr-camera-body{margin-top:10px}
-.dr-camera-video{width:100%;height:260px;background:#000;border-radius:10px;object-fit:cover}
-.dr-camera-instructions{font-size:13px;color:#9aa7b2;margin-top:8px}
-.dr-camera-actions{display:flex;justify-content:center;margin-top:12px}
-.dr-camera-btn{padding:10px 14px;border-radius:10px;border:0;background:#1f2937;color:var(--dr-accent)}
+.dr-camera-modal {
+  width: 92%;
+  max-width: 520px;
+  background: var(--dr-modal-bg);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--dr-accent);
+}
+.dr-camera-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 2px;
+}
+.dr-camera-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+.dr-camera-close {
+  background: transparent;
+  border: 0;
+  color: var(--dr-accent);
+  font-size: 20px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.dr-camera-close:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.dr-camera-body {
+  margin-top: 10px;
+}
+.dr-camera-video {
+  width: 100%;
+  height: 260px;
+  background: #000;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.dr-camera-instructions {
+  font-size: 13px;
+  color: #9aa7b2;
+  margin-top: 8px;
+}
+.dr-camera-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+}
+.dr-camera-btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 0;
+  background: #1f2937;
+  color: var(--dr-accent);
+}
 
-.dr-camera-video-wrap{position:relative;border-radius:10px;overflow:hidden}
-.dr-target-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
-.dr-target-center{width:clamp(260px,72%,92%);height:clamp(140px,22%,46%);border:2px dashed rgba(255,255,255,0.18);border-radius:12px;display:flex;align-items:center;justify-content:center;transition:transform 200ms cubic-bezier(.2,.9,.3,1),background-color 200ms ease,border-color 200ms ease,box-shadow 200ms ease;transform-origin:center}
-.dr-camera-video-wrap.dr-success .dr-target-center{border-color: rgba(var(--dr-success),0.9);box-shadow:0 8px 26px rgba(56,255,60,0.85)}
+.dr-camera-video-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dr-frame-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+.dr-frame-inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--frame-w);
+  height: var(--frame-h);
+  border-radius: 10px;
+  background: transparent;
+  pointer-events: none;
+  transition: box-shadow 180ms ease, border-color 160ms ease;
+  border: 0;
+}
 
-.dr-target-center.dr-good{border-color:rgba(var(--dr-success),0.98);box-shadow:0 0 26px rgba(56,142,60,0.34);background:rgba(56,142,60,0.06);transform:scale(1.08)}
-.dr-target-center.dr-bad{border-color:rgba(var(--dr-failure),0.98);box-shadow:0 0 16px rgba(211,47,47,0.16);transform:scale(0.98)}
-.dr-check{font-size:34px;color:#fff;display:inline-block;transform:scale(0);opacity:0;transition:transform 420ms cubic-bezier(.2,.9,.3,1),opacity 260ms linear}
-.dr-target-center.dr-good .dr-check{transform:scale(1.22) rotate(-4deg);opacity:1}
+/* Inner dashed guide inside the open frame. Using an inset pseudo-element
+   guarantees perfect pixel alignment with the dimmed hole created by
+   the large outside box-shadow on .dr-frame-inner. */
+.dr-frame-inner::before {
+  /* inner guide removed — keep pseudo-element reserved in case we need
+     to reintroduce a non-rendered helper; ensure it produces no visible output */
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: none;
+  box-shadow: none;
+  opacity: 0;
+  z-index: -1;
+}
+
+.dr-camera-video-wrap .dr-frame-inner {
+  /* reliable dim-only frame: large outside box-shadow produces a clean punched-out dim */
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+}
+.dr-target-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 18;
+}
+.dr-target-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--frame-w);
+  height: var(--frame-h);
+  border-radius: 10px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+    background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  transform-origin: center;
+  z-index: 22;
+}
+
+/* Prevent any duplicate/legacy dashed border or glow on the target center that
+   could produce an offset rectangle artifact (built bundles sometimes include
+   older styles). We render the dashed outline from the single source
+   `.dr-frame-inner` so it aligns perfectly with the dim frame. */
+.dr-target-center {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background: transparent !important;
+}
+.dr-camera-video-wrap.dr-success .dr-frame-inner {
+  box-shadow: 0 0 0 9999px rgba(56, 255, 60, 0.08),
+    inset 0 0 40px rgba(56, 255, 60, 0.04);
+  border-color: rgba(var(--dr-success), 0.98);
+}
+.dr-camera-video-wrap.dr-success .dr-target-center {
+  box-shadow: 0 8px 26px rgba(56, 255, 60, 0.85);
+}
+
+.dr-camera-video-wrap.dr-success .dr-frame-inner::after {
+  border-color: rgba(var(--dr-success), 0.14);
+  box-shadow: inset 0 8px 40px rgba(var(--dr-success), 0.06);
+}
+
+.dr-target-center.dr-good {
+  border-color: rgba(var(--dr-success), 0.98);
+  box-shadow: 0 0 26px rgba(56, 142, 60, 0.34);
+  background: rgba(56, 142, 60, 0.06);
+  transform: scale(1.08);
+}
+.dr-target-center.dr-bad {
+  border-color: rgba(var(--dr-failure), 0.98);
+  box-shadow: 0 0 16px rgba(211, 47, 47, 0.16);
+  transform: scale(0.98);
+}
+.dr-check {
+  font-size: 34px;
+  color: #fff;
+  display: inline-block;
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 420ms cubic-bezier(0.2, 0.9, 0.3, 1),
+    opacity 260ms linear;
+}
+.dr-target-center.dr-good .dr-check {
+  transform: scale(1.22) rotate(-4deg);
+  opacity: 1;
+}
 
 /* more explicit pulse transform on the target center when dr-pulse class is present */
 .dr-pulse .dr-target-center {
-	animation: dr-pulse-key 760ms cubic-bezier(.2,.9,.3,1) 1;
+  animation: dr-pulse-key 760ms cubic-bezier(0.2, 0.9, 0.3, 1) 1;
 }
 
-.dr-device-select{margin-top:8px;display:flex;gap:8px;align-items:center}
-.dr-device-select select{background:#0b1220;color:var(--dr-accent);border-radius:8px;padding:8px;border:0}
-.dr-camera-error{margin-top:10px;color:#ffdede;font-size:13px;max-width:480px}
+.dr-device-select {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dr-device-select select {
+  background: #0b1220;
+  color: var(--dr-accent);
+  border-radius: 8px;
+  padding: 8px;
+  border: 0;
+}
+.dr-camera-error {
+  margin-top: 10px;
+  color: #ffdede;
+  font-size: 13px;
+  max-width: 480px;
+}
 
-.dr-start-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.42));}
-.dr-start-btn{padding:12px 18px;border-radius:12px;border:0;background:#0ea5a6;color:#04202a;font-weight:700}
+.dr-start-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    180deg,
+    rgba(2, 6, 23, 0.6),
+    rgba(2, 6, 23, 0.42)
+  );
+}
+.dr-start-btn {
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 0;
+  background: #0ea5a6;
+  color: #04202a;
+  font-weight: 700;
+}
 
-@keyframes dr-pulse-key{0%{transform:scale(1)}30%{transform:scale(1.06)}60%{transform:scale(0.995)}100%{transform:scale(1)}}
-.dr-pulse{animation:dr-pulse-key 760ms cubic-bezier(.2,.9,.3,1) 1}
+@keyframes dr-pulse-key {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.06);
+  }
+  60% {
+    transform: scale(0.995);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.dr-pulse {
+  animation: dr-pulse-key 760ms cubic-bezier(0.2, 0.9, 0.3, 1) 1;
+}
 
 /* snap highlight when result centroid is near center */
 .dr-target-center.snap {
-	outline: 3px solid rgba(255,255,255,0.06);
-	box-shadow: 0 0 28px rgba(56,142,60,0.42), inset 0 0 18px rgba(56,142,60,0.06);
-	transform: scale(1.1);
-	transition: transform 180ms ease, box-shadow 200ms ease, outline-color 200ms ease;
+  outline: 3px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 28px rgba(56, 142, 60, 0.42),
+    inset 0 0 18px rgba(56, 142, 60, 0.06);
+  transform: scale(1.1);
+  transition: transform 180ms ease, box-shadow 200ms ease,
+    outline-color 200ms ease;
 }
 
-.dr-camera-hint{margin-top:8px;color:#f59e0b;font-size:13px}
+/* Mode-specific frame styles */
+.dr-camera-video-wrap.mode-barcode {
+  --frame-w: 72%;
+  --frame-h: 42%;
+}
+.dr-camera-video-wrap.mode-barcode .dr-frame-inner {
+  border: 0;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+} /* keep outside dim */
+.dr-camera-video-wrap.mode-barcode .dr-frame-inner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* keep subtle inner edge but remove the previously visible border that
+     duplicated the dashed outline (caused offset artifacts) */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  border: none;
+}
+
+/* Draw the dashed outline from the frame-inner (single authoritative source).
+   This guarantees perfect alignment between the dim frame and the dashed guide. */
+.dr-camera-video-wrap.mode-barcode .dr-frame-inner {
+  /* keep outside dim only; inner dashed guide is provided by ::before */
+  border: 0;
+  /* ensure the frame's pseudo elements cannot overflow and create stray rectangles */
+  overflow: hidden;
+}
+.dr-camera-video-wrap.mode-barcode .dr-frame-inner::before {
+  /* subtle bottom accent line */
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 8px;
+  height: 6px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.04),
+    rgba(255, 255, 255, 0.02)
+  );
+  opacity: 0.7;
+}
+.dr-camera-video-wrap.mode-photo {
+  /* Photo mode uses a TCG-card-like frame (approx 2.5" x 3.5" -> 5:7) to
+     encourage tight crops for downstream image recognition. The frame is
+     limited in width and uses an aspect-ratio to stay consistent across
+     device sizes. */
+  --frame-w: auto;
+  --frame-h: auto;
+}
+.dr-camera-video-wrap.mode-photo .dr-frame-inner {
+  border: 0;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+  width: clamp(160px, 60%, 320px);
+  height: auto;
+  aspect-ratio: 5 / 7; /* width / height (TCG card approx 2.5 x 3.5) */
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.dr-camera-hint {
+  margin-top: 8px;
+  color: #f59e0b;
+  font-size: 13px;
+}
 
 /* optional visual guides overlay */
-.dr-guides-toggle{position:absolute;left:12px;top:12px;z-index:40}
-.dr-guides-btn{background:rgba(255,255,255,0.06);border:0;color:var(--dr-accent);padding:6px 8px;border-radius:8px;font-size:12px}
-.dr-guides-overlay{position:absolute;inset:0;pointer-events:none;z-index:20}
-.dr-guides-line{position:absolute;background:rgba(255,255,255,0.06)}
-.dr-guides-label{position:absolute;color:rgba(255,255,255,0.6);font-size:11px;background:rgba(0,0,0,0.25);padding:2px 6px;border-radius:6px}
+.dr-guides-toggle {
+  display: none;
+}
+.dr-guides-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 0.98;
+}
+.dr-guides-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+.dr-guides-line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.06);
+}
+.dr-guides-label {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
 
-.dr-success-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
-.dr-success-card{background:linear-gradient(180deg,#f8fff7,#e6fff0);color:#042018;padding:14px 20px;border-radius:12px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,0.26);transform:translateY(8px) scale(0.98);opacity:0;transition:transform 320ms cubic-bezier(.2,.9,.3,1),opacity 220ms ease}
-.dr-camera-body.dr-success .dr-success-card{transform:translateY(0) scale(1);opacity:1}
+.dr-success-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dr-success-card {
+  background: linear-gradient(180deg, #f8fff7, #e6fff0);
+  color: #042018;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
+  transform: translateY(8px) scale(0.98);
+  opacity: 0;
+  transition: transform 320ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 220ms ease;
+}
+.dr-camera-body.dr-success .dr-success-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
 
+/* mode toggle & capture */
+.dr-mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+.dr-mode-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 0;
+  color: var(--dr-accent);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.dr-mode-btn.active {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
+}
+.dr-capture-btn {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 0;
+  background: #0ea5a6;
+  color: #04202a;
+  font-weight: 700;
+}
+.dr-capture-btn:active {
+  transform: translateY(1px);
+}
+
+/* small status dot and text */
+.dr-status {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+.dr-status-scanning {
+  background: #f59e0b;
+}
+.dr-status-success {
+  background: rgba(var(--dr-success), 0.9);
+}
+.dr-status-photo {
+  background: #60a5fa;
+}
+.dr-status-idle {
+  background: rgba(255, 255, 255, 0.12);
+}
