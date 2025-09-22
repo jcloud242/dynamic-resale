@@ -63,6 +63,11 @@ export default function ResultCard({ item }) {
       <div className="dr-main">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div className="dr-title">{displayTitle}</div>
+          {itemState.platform && (
+            <div className="dr-badge" title={itemState.platform}>
+              {itemState.platform}{itemState.releaseYear ? ` • ${itemState.releaseYear}` : ''}
+            </div>
+          )}
         </div>
         <div className="dr-meta">{metaLine}</div>
         <div className="dr-meta-sub">{ts}</div>

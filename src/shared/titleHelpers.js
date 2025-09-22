@@ -23,15 +23,23 @@ export function extractPlatform(listings = [], fallbackTitle='') {
     return t;
   };
 
-  // scan sold/listing titles first (aggressive)
+  // majority-vote across listing titles to avoid single accessory outliers
+  const counts = Object.create(null);
+  for (const token of rawTokens) counts[token] = 0;
   for (const l of listings) {
     if (!l || !l.title) continue;
     const t = l.title;
     for (const token of rawTokens) {
-      const re = new RegExp(`\\b${token.replace(/\s+/g,'\\s+')}\\b`, 'i');
-      if (re.test(t)) return normalize(token);
+      const re = new RegExp(`\\b${token.replace(/\\s+/g,'\\\\s+')}\\b`, 'i');
+      if (re.test(t)) { counts[token] = (counts[token] || 0) + 1; break; }
     }
   }
+  // pick token with highest count
+  let best = null; let bestCount = 0;
+  for (const k of Object.keys(counts)) {
+    if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+  }
+  if (bestCount > 0) return normalize(best);
 
   // fallback: scan main title
   for (const token of rawTokens) {

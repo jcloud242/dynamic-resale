@@ -28,12 +28,18 @@ export default function Home() {
 
   async function handleSearch(query, opts = {}) {
     if (!query) return;
+    // normalize if query is an object { query, category, source }
+    let rawQuery = query;
+    if (typeof query === 'object' && query !== null) {
+      rawQuery = query.query || (query.label || '');
+      opts = Object.assign({}, opts, { category: query.category, source: query.source });
+    }
     // dedupe identical queries fired within a short span
-    if (lastQueryRef.current === query) return;
-    lastQueryRef.current = query;
+    if (lastQueryRef.current === rawQuery) return;
+    lastQueryRef.current = rawQuery;
 
     // return cached promise/result when available
-    const cached = searchCache.current.get(query);
+    const cached = searchCache.current.get(rawQuery);
     if (cached) {
       setLoading(true);
       const res = await cached;
@@ -47,19 +53,19 @@ export default function Home() {
   setLoading(true);
   // show a lightweight placeholder immediately for fast camera scan feedback
   if (opts.showPlaceholder) {
-    setActive({ query, title: 'Searching…', upc: query, thumbnail: '/vite.svg', avgPrice: null, minPrice: null, maxPrice: null, soldListings: [], fetchedAt: new Date().toISOString() });
+    setActive({ query: rawQuery, title: 'Searching…', upc: rawQuery, thumbnail: '/vite.svg', avgPrice: null, minPrice: null, maxPrice: null, soldListings: [], fetchedAt: new Date().toISOString() });
   }
   setError(null);
-    const p = postSearch({ query }).then((res) => {
+    const p = postSearch({ query: rawQuery, opts }).then((res) => {
       // persist into cache
-      searchCache.current.set(query, Promise.resolve(res));
+      searchCache.current.set(rawQuery, Promise.resolve(res));
       return res;
     }).catch((err) => {
-      searchCache.current.delete(query);
+      searchCache.current.delete(rawQuery);
       throw err;
     });
     // store promise to allow concurrent callers to share
-    searchCache.current.set(query, p);
+    searchCache.current.set(rawQuery, p);
 
     try {
       const res = await p;
@@ -90,6 +96,25 @@ export default function Home() {
           }
         })();
       }
+      // If this was a barcode scan, run enrichment in background to fetch UPC/details
+      // without blocking the initial UI. Update active if richer metadata returns
+      // and the user is still viewing the same query.
+      try {
+        const isBarcode = !!(opts && opts.isBarcode);
+        if (isBarcode) {
+          (async () => {
+            try {
+              const enriched = await postSearch({ query, force: true, opts: Object.assign({}, opts, { enrichUpcs: true }) });
+              if (lastQueryRef.current === query && enriched) {
+                setActive(enriched);
+                saveRecent(enriched);
+              }
+            } catch (e) {
+              // ignore background enrichment failures
+            }
+          })();
+        }
+      } catch (e) {}
       return res;
     } catch (err) {
       console.error('Search error', err);
@@ -114,6 +139,14 @@ export default function Home() {
     // after a new search/scan, reduce visible area to 3 to keep focus on results
     setRecent(r.slice(0, 3));
     setRecentVisibleCount(3);
+
+    // persist to server-side recent cache (best-effort)
+    try {
+      fetch('/api/recent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: res.query, title: res.title })
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   function clearRecent() {
@@ -125,7 +158,9 @@ export default function Home() {
     // detection forwarded from CameraModal
     // Convert payload to a query and run search
     if (payload.type === 'barcode') {
-      handleSearch(payload.value, { silentRefresh: true, suppressCachedBadge: true, showPlaceholder: true }).catch((e) => {
+      // barcode scans should request UPC enrichment and be marked as barcode so
+      // we can ensure the scanned UPC appears in the final metadata
+      handleSearch(payload.value, { silentRefresh: true, suppressCachedBadge: true, showPlaceholder: true, enrichUpcs: true, isBarcode: true }).catch((e) => {
         console.error('Search failed', e);
       });
     } else if (payload.type === 'image') {

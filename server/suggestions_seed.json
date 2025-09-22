@@ -1,0 +1,22 @@
+[
+  { "query": "The Legend Of Zelda: Breath Of The Wild", "title": "The Legend Of Zelda: Breath Of The Wild" },
+  { "query": "The Legend Of Zelda: Tears Of The Kingdom", "title": "The Legend Of Zelda: Tears Of The Kingdom" },
+  { "query": "Animal Crossing: New Horizons", "title": "Animal Crossing: New Horizons" },
+  { "query": "Animal Crossing: New Leaf", "title": "Animal Crossing: New Leaf" },
+  { "query": "Super Mario Odyssey", "title": "Super Mario Odyssey" },
+  { "query": "Pokemon Scarlet", "title": "Pokemon Scarlet" },
+  { "query": "Pokemon Violet", "title": "Pokemon Violet" },
+  { "query": "Mario Kart 8 Deluxe", "title": "Mario Kart 8 Deluxe" },
+  { "query": "Hyrule Warriors: Age of Calamity", "title": "Hyrule Warriors: Age of Calamity" },
+  { "query": "Minecraft (Nintendo Switch)", "title": "Minecraft" },
+
+  { "query": "Harry Potter and the Sorcerer's Stone", "title": "Harry Potter and the Sorcerer's Stone" },
+  { "query": "The Hobbit", "title": "The Hobbit" },
+  { "query": "Dune", "title": "Dune" },
+  { "query": "1984", "title": "1984" },
+
+  { "query": "Magic: The Gathering booster pack", "title": "Magic: The Gathering booster pack" },
+  { "query": "Black Lotus (Alpha)", "title": "Black Lotus (Alpha)" },
+  { "query": "Pokemon booster pack", "title": "Pokemon booster pack" },
+  { "query": "Charizard (Base Set)", "title": "Charizard (Base Set)" }
+]

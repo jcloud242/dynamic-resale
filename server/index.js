@@ -12,9 +12,94 @@ console.log('ENV load:', {
   PORT: process.env.PORT || null,
 });
 
+  // Normalize platform short labels to friendly names
+  const PLATFORM_MAP = {
+    '3ds': 'Nintendo 3DS',
+    'nintendo 3ds': 'Nintendo 3DS',
+    'ds': 'Nintendo DS',
+    'dsi': 'Nintendo DSi',
+    'wii': 'Nintendo Wii',
+    'wii u': 'Nintendo Wii U',
+    'switch': 'Nintendo Switch',
+    'ps4': 'PlayStation 4',
+    'ps5': 'PlayStation 5',
+    'ps3': 'PlayStation 3',
+    'xbox one': 'Xbox One',
+    'xbox series x': 'Xbox Series X',
+    'xbox 360': 'Xbox 360',
+    'pc': 'PC',
+    'mac': 'Mac'
+  };
+
+  function normalizePlatformLabel(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim().toLowerCase();
+    // split on common separators and try to find a known token
+    const parts = s.split(/\s*[-\/\\|,;:]\s*/).map(p => p.trim());
+    for (const p of parts) {
+      if (!p) continue;
+      if (PLATFORM_MAP[p]) return PLATFORM_MAP[p];
+      // try removing non-alphanum
+      const clean = p.replace(/[^a-z0-9 ]/g, '').trim();
+      if (PLATFORM_MAP[clean]) return PLATFORM_MAP[clean];
+    }
+    // fallback to capitalized words
+    return parts[0].split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+
 const app = express();
-app.use(cors());
+// expose custom tracing headers to the browser so client can read them
+app.use(cors({ exposedHeaders: ['X-Server-Duration-ms', 'X-Request-Id'] }));
 app.use(express.json());
+const fs = require('fs');
+
+// lightweight request tracing: attach a short request id and a trace helper
+app.use((req, res, next) => {
+  try {
+    const rid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
+    req.requestId = rid;
+    res.setHeader('X-Request-Id', rid);
+    // container for timing steps: {name, ts}
+    res.locals._timingSteps = [{ name: 'start', ts: Date.now() }];
+    // helper to record named step
+    req.trace = (name) => {
+      try { res.locals._timingSteps.push({ name: String(name || 'step'), ts: Date.now() }); } catch (e) {}
+    };
+  } catch (e) {}
+  next();
+});
+
+// server timing middleware: attach X-Server-Duration-ms and emit request trace to server.log
+app.use((req, res, next) => {
+  const start = Date.now();
+  const origJson = res.json.bind(res);
+  res.json = function (body) {
+    try {
+      const ms = Date.now() - start;
+      res.setHeader('X-Server-Duration-ms', String(ms));
+      const rid = req.requestId || (res.getHeader && res.getHeader('X-Request-Id')) || null;
+      if (rid) res.setHeader('X-Request-Id', rid);
+      try {
+        const steps = (res.locals && res.locals._timingSteps) || [];
+        const normalized = steps.map(s => ({ name: s.name, ts: s.ts }));
+        const deltas = [];
+        for (let i = 1; i < normalized.length; i++) {
+          deltas.push({ name: normalized[i].name, deltaMs: normalized[i].ts - normalized[i-1].ts });
+        }
+        const logLine = JSON.stringify({ time: new Date().toISOString(), rid, totalMs: ms, deltas, url: req.originalUrl, method: req.method });
+        // only persist verbose traces when explicitly enabled via env
+        try {
+          if (process.env.ENABLE_TRACE_LOG === '1') {
+            try { fs.appendFile(path.join(__dirname, 'server.log'), logLine + '\n', () => {}); } catch (e) {}
+            try { console.debug('[trace]', logLine); } catch (e) {}
+          }
+        } catch (e) {}
+      } catch (e) {}
+    } catch (e) {}
+    return origJson(body);
+  };
+  next();
+});
 
 // Use pluggable cache wrapper (Redis if REDIS_URL set, otherwise in-memory fallback)
 const cache = require('./cache');
@@ -25,6 +110,20 @@ async function setCache(key, value, ttlMs = 30000) {
 async function getCache(key) {
   return cache.get(key);
 }
+
+// Seed suggestions on startup if cache empty
+(async function seedSuggestions() {
+  try {
+    const existing = await getCache('dr_recent');
+    if (!existing || !Array.isArray(existing) || existing.length === 0) {
+      const seed = require('./suggestions_seed.json');
+      if (Array.isArray(seed) && seed.length) {
+        await setCache('dr_recent', seed, 1000 * 60 * 60 * 24 * 7);
+        console.log('[seed] dr_recent seeded with', seed.length, 'items');
+      }
+    }
+  } catch (e) { console.warn('[seed] failed', e && e.message); }
+})();
 
 // axios GET with simple retry + exponential backoff for transient failures
 async function axiosGetWithRetry(url, opts = {}, attempts = 2, baseDelay = 200) {
@@ -70,19 +169,22 @@ function cleanListingTitleForName(t) {
   return s;
 }
 
-function detectPlatformFromListings(listings = []) {
+function detectPlatformFromListings(listings = [], preferredNames = []) {
   // Infer platform by majority vote across listing titles (more robust than first-match)
   if (!Array.isArray(listings)) return null;
   // ordered map of regex -> normalized platform label
   const platformPatterns = [
-    { re: /\b(nintendo\s+switch|nintendo|switch)\b/i, label: 'Nintendo Switch' },
+    // match handheld/legacy consoles first (more specific)
+    { re: /\b(nintendo\s+3ds|3ds|nintendo\s+ds|ds)\b/i, label: '3DS' },
+    { re: /\b(wii\s*u|wiiu)\b/i, label: 'Wii U' },
+    { re: /\b(wii)\b/i, label: 'Wii' },
+    // modern consoles
     { re: /\b(ps5|playstation\s*5|playstation5)\b/i, label: 'PS5' },
     { re: /\b(ps4|playstation\s*4|playstation4)\b/i, label: 'PS4' },
     { re: /\b(xbox\s*series\s*x|xbox\s*seriesx)\b/i, label: 'Xbox Series X' },
     { re: /\b(xbox\s*one)\b/i, label: 'Xbox One' },
-    { re: /\b(wii\s*u|wiiu)\b/i, label: 'Wii U' },
-    { re: /\b(wii)\b/i, label: 'Wii' },
-    { re: /\b(3ds|nintendo\s+3ds)\b/i, label: '3DS' },
+    // Nintendo Switch: match explicit 'switch' or 'nintendo switch' but avoid bare 'nintendo'
+    { re: /\b(nintendo\s+switch|switch)\b/i, label: 'Nintendo Switch' },
     { re: /\b(pc|steam)\b/i, label: 'PC' },
   ];
 
@@ -95,7 +197,20 @@ function detectPlatformFromListings(listings = []) {
     // prefer the first matching token per listing (prevents double-counting)
     for (const p of platformPatterns) {
       if (p.re.test(t)) {
-        counts[p.label] = (counts[p.label] || 0) + 1;
+        // base weight
+        let weight = 1;
+        // boost weight if this listing's cleaned title matches one of the preferred names
+        try {
+          const cleaned = cleanListingTitleForName(l.title || '');
+          for (const pn of (preferredNames || [])) {
+            if (!pn) continue;
+            if (cleaned && cleaned.toLowerCase().includes(String(pn).toLowerCase())) {
+              weight += 5;
+              break;
+            }
+          }
+        } catch (e) {}
+        counts[p.label] = (counts[p.label] || 0) + weight;
         break;
       }
     }
@@ -248,9 +363,24 @@ app.post('/api/cache/clear', async (req, res) => {
 // Example search endpoint stub — returns mock results
 app.post('/api/search', async (req, res) => {
   try {
-    const { query } = req.body;
-    console.log('[search] request received for query=', query, 'preferCompleted=', !!(req.body && req.body.preferCompleted));
+    const { query, opts } = req.body || {};
+  console.log('[search] request received for query=', query, 'preferCompleted=', !!(req.body && req.body.preferCompleted));
+  try { if (req && req.trace) req.trace('handler-start'); } catch (e) {}
     if (!query) return res.status(400).json({ error: 'missing-query' });
+
+    // normalize query for cache keys and API calls (remove extra whitespace, lower, strip punctuation)
+    function normalizeQuery(s) {
+      if (!s) return '';
+      try {
+        let t = String(s).trim().toLowerCase();
+        // replace multiple whitespace and separators
+        t = t.replace(/[\s\-_/\\]+/g, ' ');
+        // remove extraneous punctuation except alphanumerics and spaces
+        t = t.replace(/[^a-z0-9\s]/g, '');
+        t = t.replace(/\s+/g, ' ').trim();
+        return t;
+      } catch (e) { return String(s).trim(); }
+    }
 
     // If no eBay credentials are configured, or token acquisition fails, fall back
     // to a lightweight mocked response so local development works offline.
@@ -261,7 +391,6 @@ app.post('/api/search', async (req, res) => {
       const mock = {
         query,
         title: query || 'Mock Item Title',
-        upc: query,
         categoryId: '139973',
         thumbnail: '/vite.svg',
         avgPrice: 42.5,
@@ -277,8 +406,9 @@ app.post('/api/search', async (req, res) => {
     }
 
     try {
-      const { force } = req.body || {};
-      const cacheKey = `search:${query}`;
+  const { force } = req.body || {};
+  const normalized = normalizeQuery(query);
+  const cacheKey = `search:${normalized}`;
       const cached = !force ? await getCache(cacheKey) : null;
       if (cached) {
         console.log('[search] cache hit for', query, 'cachedType=', typeof cached);
@@ -302,7 +432,9 @@ app.post('/api/search', async (req, res) => {
         }
       }
 
+  try { if (req && req.trace) req.trace('token-start'); } catch (e) {}
   const token = await getEbayAppToken();
+  try { if (req && req.trace) req.trace('token-end'); } catch (e) {}
   console.log('[search] acquired token, calling APIs');
       const preferCompleted = !!req.body.preferCompleted;
   // allow using the existing OAuth client id as the legacy Finding API AppID
@@ -312,7 +444,9 @@ app.post('/api/search', async (req, res) => {
       let completedListings = [];
       if (preferCompleted || findingAppId) {
         try {
+          try { if (req && req.trace) req.trace('finding-start'); } catch (e) {}
           completedListings = await findCompletedItemsViaFindingAPI(query, findingAppId);
+          try { if (req && req.trace) req.trace('finding-end'); } catch (e) {}
           if (completedListings && completedListings.length) console.log('[search] using completed items from Finding API for', query);
         } catch (e) {
           console.warn('[search] Finding API failed or unavailable', e && e.message);
@@ -321,10 +455,46 @@ app.post('/api/search', async (req, res) => {
       }
 
       // call eBay Browse API to search item summaries using axios with retry (fallback and listing source)
-      const q = encodeURIComponent(query);
-  const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=30`;
-      console.log('[search] calling eBay Browse API', url);
-      const r = await axiosGetWithRetry(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      // build an enhanced eBay query: if the user entered a UPC/ISBN, search by that directly;
+      // otherwise prefer the normalized phrase and append platform hints if present.
+      function isLikelyUpc(s) {
+        if (!s) return false;
+        const d = String(s).replace(/[^0-9]/g, '');
+        return [8,12,13].includes(d.length);
+      }
+
+      function tokenize(s) {
+        if (!s) return [];
+        return String(s)
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter(t => t.length > 1);
+      }
+
+      const normalizedQuery = normalized || String(query).trim();
+      const queryIsUpc = isLikelyUpc(query) || isLikelyUpc(normalizedQuery);
+      let ebayQ = '';
+      if (queryIsUpc) {
+        // search by UPC value directly
+        ebayQ = encodeURIComponent(String(query).replace(/[^0-9]/g, ''));
+      } else {
+        // include the normalized phrase; try to weight exact phrase by quoting it
+        // and also include the raw query to preserve user intent
+        const phrase = encodeURIComponent(`"${normalizedQuery}"`);
+        const loose = encodeURIComponent(normalizedQuery);
+        ebayQ = `${phrase}%20${loose}`;
+        // if client provided a category hint, append it to bias results
+        if (opts && opts.category) {
+          ebayQ = `${ebayQ}%20${encodeURIComponent(String(opts.category))}`;
+        }
+      }
+  const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${ebayQ}&limit=30`;
+  try { if (req && req.trace) req.trace('browse-start'); } catch (e) {}
+  console.log('[search] calling eBay Browse API', url);
+  const r = await axiosGetWithRetry(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+  try { if (req && req.trace) req.trace('browse-end'); } catch (e) {}
       if (!r || (r.status && r.status >= 400)) {
         console.warn('eBay search failed', r && r.status, r && r.data);
         return res.status(502).json({ error: 'ebay-search-failed' });
@@ -338,13 +508,207 @@ app.post('/api/search', async (req, res) => {
         thumbnail: it.image && it.image.imageUrl || '/vite.svg',
         itemHref: it.itemWebUrl,
         condition: it.condition || null,
-        upc: (it.legacyItemId && it.legacyItemId.legacyItemId) || null,
       }));
+      // helper: fetch full item details for a Browse item id and return parsed JSON
+      async function fetchItemDetails(itemId, token) {
+        if (!itemId || !token) return null;
+        try {
+          const cacheKey = `item_details:${itemId}`;
+          // try cache first
+          const cached = await getCache(cacheKey).catch(() => null);
+          if (cached) return cached;
+          const url = `https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(itemId)}`;
+          const dr = await axiosGetWithRetry(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, 2, 200).catch(() => null);
+          const data = dr && dr.data ? dr.data : null;
+          if (data) {
+            // cache briefly to avoid repeated detail calls — do not await cache write
+            try { setCache(cacheKey, data, 1000 * 60 * 5).catch(() => {}); } catch (e) {}
+          }
+          return data;
+        } catch (e) { return null; }
+      }
+
+      function extractAllFromDetails(details) {
+        if (!details) return {};
+        const out = { upc: null, gameName: null, platform: null, releaseYear: null };
+        const tryDigits = (v) => {
+          if (!v) return null;
+          const s = String(v).replace(/[^0-9]/g, '');
+          if ([8,12,13].includes(s.length)) return s;
+          return null;
+        };
+        try {
+          // top-level gtin
+          if (details.gtin) {
+            const g = tryDigits(details.gtin);
+            if (g) out.upc = g;
+          }
+        } catch (e) {}
+        try {
+          // localizedAspects
+          if (details.localizedAspects && Array.isArray(details.localizedAspects)) {
+            for (const la of details.localizedAspects) {
+              try {
+                const name = (la && la.name) ? String(la.name).toLowerCase() : null;
+                const value = (la && la.value) ? la.value : null;
+                if (name && (name.includes('upc') || name.includes('gtin') || name.includes('barcode'))) {
+                  const d = tryDigits(value);
+                  if (d) out.upc = d;
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        try {
+          // product.aspects
+          if (details.product && details.product.aspects) {
+            for (const k of Object.keys(details.product.aspects)) {
+              try {
+                const vals = details.product.aspects[k];
+                if (!out.gameName && k.toLowerCase().includes('game')) out.gameName = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                if (!out.platform && (k.toLowerCase().includes('platform') || k.toLowerCase().includes('system'))) out.platform = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                if (!out.releaseYear && k.toLowerCase().includes('year')) {
+                  const y = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                  const m = y && y.match(/(?:19|20)\d{2}/);
+                  if (m) out.releaseYear = m[0];
+                }
+                // UPC-like keys
+                if (!out.upc && (k.toLowerCase().includes('upc') || k.toLowerCase().includes('gtin') || k.toLowerCase().includes('ean'))) {
+                  const v = Array.isArray(vals) ? vals[0] : vals;
+                  const d = tryDigits(v);
+                  if (d) out.upc = d;
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        try {
+          // aspects
+          if (details.aspects && typeof details.aspects === 'object') {
+            for (const k of Object.keys(details.aspects)) {
+              try {
+                const vals = details.aspects[k];
+                if (!out.gameName && k.toLowerCase().includes('game name')) out.gameName = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                if (!out.platform && (k.toLowerCase().includes('platform') || k.toLowerCase().includes('system'))) out.platform = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                if (!out.releaseYear && k.toLowerCase().includes('release')) {
+                  const y = Array.isArray(vals) ? String(vals[0]) : String(vals);
+                  const m = y && y.match(/(?:19|20)\d{2}/);
+                  if (m) out.releaseYear = m[0];
+                }
+                if (!out.upc) {
+                  if (Array.isArray(vals)) for (const v of vals) { const d = tryDigits(v); if (d) out.upc = d; }
+                  else { const d = tryDigits(vals); if (d) out.upc = d; }
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        try {
+          // itemSpecifics array fallback
+          if (details.itemSpecifics && Array.isArray(details.itemSpecifics)) {
+            for (const s of details.itemSpecifics) {
+              try {
+                const n = (s.name || '').toLowerCase();
+                const v = (s.value && s.value[0]) ? s.value[0] : (s.value || null);
+                if (!v) continue;
+                if (!out.gameName && n.includes('game')) out.gameName = String(v);
+                if (!out.platform && (n.includes('platform') || n.includes('system'))) out.platform = String(v);
+                if (!out.releaseYear) {
+                  const m = String(v).match(/(?:19|20)\d{2}/);
+                  if (m) out.releaseYear = m[0];
+                }
+                if (!out.upc) {
+                  const d = tryDigits(v);
+                  if (d) out.upc = d;
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        return out;
+      }
+
+      // Enrich top browse items with item details (upc, aspects) — parallelized with limited concurrency
+      try {
+        const enrichCount = Math.min(12, browseItems.length);
+        const concurrency = 4;
+        if (enrichCount > 0 && token) {
+    const queue = [];
+          for (let i = 0; i < enrichCount; i++) {
+            const it = browseItems[i];
+            if (!it) continue;
+            // skip if we already have a UPC and basic aspects
+            if (it.upc) continue;
+            queue.push(async () => {
+              try {
+                const details = await fetchItemDetails(it.id, token);
+                if (!details) return;
+                const all = extractAllFromDetails(details);
+                if (all.upc) it.upc = all.upc;
+                if (all.gameName && !it.cleanedTitle) it.cleanedTitle = all.gameName;
+                if (all.platform && !it.platform) it.platform = normalizePlatformLabel(all.platform) || all.platform;
+                if (all.releaseYear && !it.releaseYear) it.releaseYear = all.releaseYear;
+                it._details = details;
+              } catch (e) {}
+            });
+          }
+          // run queue with limited concurrency
+          try { if (req && req.trace) req.trace('enrich-queue-start'); } catch (e) {}
+          const runners = new Array(concurrency).fill(null).map(async () => {
+            while (queue.length) {
+              const fn = queue.shift();
+              if (!fn) break;
+              await fn();
+            }
+          });
+          await Promise.all(runners);
+          try { if (req && req.trace) req.trace('enrich-queue-end'); } catch (e) {}
+        }
+      } catch (e) { /* ignore enrichment errors */ }
 
   // choose price source: prefer completedListings (Finding API) if present; otherwise use browseItems
   const priceSource = (completedListings && completedListings.length) ? completedListings : browseItems;
-  // keep raw copy for transparency
-  const soldListingsRaw = priceSource.slice();
+  // keep raw copy for transparency (may be refreshed after fetching details)
+  let soldListingsRaw = priceSource.slice();
+
+      // Re-rank browseItems by simple token overlap with the user's query to boost relevance
+  try {
+    const qTokens = tokenize(normalizedQuery || query);
+    if (qTokens.length && Array.isArray(browseItems) && browseItems.length) {
+      for (const it of browseItems) {
+        const title = (it.title || '') + ' ' + (it.subtitle || '');
+        const tTokens = tokenize(title);
+        let overlap = 0;
+        for (const qt of qTokens) if (tTokens.includes(qt)) overlap += 1;
+        // score is fraction of query tokens matched (0..1) with small boost for exact title inclusion
+        const frac = overlap / Math.max(qTokens.length, 1);
+        const exactBoost = String(it.title || '').toLowerCase().includes((normalizedQuery || '').toLowerCase()) ? 0.12 : 0;
+        it.matchScore = Math.min(1, frac + exactBoost);
+      }
+      // If client indicated the suggestion came from eBay, try to promote an exact cleaned title match
+      try {
+        if (opts && opts.source && String(opts.source).toLowerCase() === 'ebay') {
+          const desired = cleanListingTitleForName(normalizedQuery) || normalizedQuery;
+          if (desired) {
+            for (let i = 0; i < browseItems.length; i++) {
+              const it = browseItems[i];
+              const cleaned = cleanListingTitleForName(it.title || '');
+              if (cleaned && cleaned.toLowerCase() === desired.toLowerCase()) {
+                // move to front
+                browseItems.splice(i, 1);
+                browseItems.unshift(it);
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+      // sort in-place by descending matchScore, then fallback to price presence
+      browseItems.sort((a,b) => (b.matchScore || 0) - (a.matchScore || 0));
+    }
+  } catch (e) {
+    console.warn('[search] re-rank failed', e && e.message);
+  }
   // filter graded/collector listings from the price aggregation and returned soldListings
   const nonGraded = soldListingsRaw.filter((it) => !isGradedListing(it));
   console.log('[search] priceSource length=', priceSource && priceSource.length, 'nonGraded=', nonGraded.length);
@@ -374,11 +738,13 @@ app.post('/api/search', async (req, res) => {
       try {
         if (browseItems.length && token) {
           const topId = browseItems[0].id;
-          if (topId) {
-            const detailUrl = `https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(topId)}`;
-            const dr = await axiosGetWithRetry(detailUrl, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, 2, 200).catch(() => null);
-            topItemDetails = dr && dr.data ? dr.data : null;
-          }
+              if (topId) {
+                  try { if (req && req.trace) req.trace('top-detail-start'); } catch (e) {}
+                  const detailUrl = `https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(topId)}`;
+                  const dr = await axiosGetWithRetry(detailUrl, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, 2, 200).catch(() => null);
+                  topItemDetails = dr && dr.data ? dr.data : null;
+                  try { if (req && req.trace) req.trace('top-detail-end'); } catch (e) {}
+                }
         }
       } catch (e) {
         console.warn('[search] failed to fetch item details for top item', e && e.message);
@@ -441,7 +807,115 @@ app.post('/api/search', async (req, res) => {
         return out;
       }
 
-      const detailsExtract = extractFromDetails(topItemDetails);
+  // merge extractFromDetails (aspects) with unified extractor for broader coverage
+  const detailsExtract = Object.assign({}, extractFromDetails(topItemDetails), extractAllFromDetails(topItemDetails || {}));
+
+      // helper: attempt to pull a numeric UPC-like identifier from details
+      function extractUpcFromDetails(details) {
+        if (!details) return null;
+        const tryDigits = (v) => {
+          if (!v) return null;
+          const s = String(v).replace(/[^0-9]/g, '');
+          if ([8,12,13].includes(s.length)) return s;
+          return null;
+        };
+        // top-level gtin (e.g., 'gtin': '4902370534597')
+        try {
+          if (details.gtin) {
+            const g = tryDigits(details.gtin);
+            if (g) return g;
+          }
+        } catch (e) {}
+        // localizedAspects often contains UPC under a named aspect
+        try {
+          if (details.localizedAspects && Array.isArray(details.localizedAspects)) {
+            for (const la of details.localizedAspects) {
+              try {
+                const name = (la && la.name) ? String(la.name).toLowerCase() : null;
+                const value = (la && la.value) ? la.value : null;
+                if (name && (name.includes('upc') || name.includes('gtin') || name.includes('barcode'))) {
+                  const d = tryDigits(value);
+                  if (d) return d;
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        // check product aspects
+        try {
+          if (details.product && details.product.aspects) {
+            for (const k of Object.keys(details.product.aspects)) {
+              const vals = details.product.aspects[k];
+              if (Array.isArray(vals)) for (const v of vals) { const d = tryDigits(v); if (d) return d; }
+              else { const d = tryDigits(vals); if (d) return d; }
+            }
+          }
+        } catch (e) {}
+        // check aspects/top-level
+        try {
+          if (details.aspects && typeof details.aspects === 'object') {
+            for (const k of Object.keys(details.aspects)) {
+              const v = details.aspects[k];
+              if (Array.isArray(v)) for (const vv of v) { const d = tryDigits(vv); if (d) return d; }
+              else { const d = tryDigits(v); if (d) return d; }
+            }
+          }
+        } catch (e) {}
+        // itemSpecifics fallback
+        try {
+          if (details.itemSpecifics && Array.isArray(details.itemSpecifics)) {
+            for (const s of details.itemSpecifics) {
+              const v = (s.value && s.value[0]) ? s.value[0] : (s.value || null);
+              const d = tryDigits(v);
+              if (d) return d;
+            }
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      // If many browse items lack UPCs, fetch item details for the top few to try to locate UPCs
+      async function fetchUpcsForBrowseItems(items = [], token, limit = 6) {
+        if (!items || !items.length || !token) return;
+        // run up to `concurrency` detail fetches in parallel to avoid sequential waits
+        const concurrency = 4;
+        const queue = [];
+        for (const it of items) {
+          if (queue.length >= limit) break;
+          if (!it || it.upc) continue;
+          queue.push(async () => {
+            try {
+              const d = await fetchItemDetails(it.id, token);
+              const upc = (d && extractAllFromDetails(d).upc) || null;
+              if (upc) it.upc = upc;
+            } catch (e) {
+              // ignore individual failures
+            }
+          });
+        }
+        if (!queue.length) return;
+        try { if (req && req.trace) req.trace('fetch-upc-start'); } catch (e) {}
+        const runners = new Array(concurrency).fill(null).map(async () => {
+          while (queue.length) {
+            const fn = queue.shift();
+            if (!fn) break;
+            await fn();
+          }
+        });
+        await Promise.all(runners);
+        try { if (req && req.trace) req.trace('fetch-upc-end'); } catch (e) {}
+      }
+
+      // attempt to enrich browseItems with UPCs for the top results only when client requests it
+      try {
+        const doEnrichUpcs = !!(req.body && req.body.enrichUpcs);
+        if (doEnrichUpcs) {
+          try { if (req && req.trace) req.trace('fetch-upc-init'); } catch (e) {}
+          await fetchUpcsForBrowseItems(browseItems, token, 6);
+        }
+      } catch (e) { /* ignore */ }
+      // if priceSource used browseItems, refresh soldListingsRaw to reflect any enriched UPCs
+      try { soldListingsRaw = priceSource.slice(); } catch (e) {}
 
   // basic aggregation for UI: avg/min/max based on chosen source
   const rawPrices = filteredSource.map(i => Number(i.price)).filter(p => !Number.isNaN(p));
@@ -457,10 +931,18 @@ app.post('/api/search', async (req, res) => {
         if (Number.isNaN(n)) return null;
         return Number(n.toFixed(2));
       };
-      // ensure we have a concise gameName
-      const candidateGameName = chooseBestGameName(priceSource, detailsExtract);
-      // prefer majority-vote inference from listings; fall back to extracted top-item platform
-      const inferredPlatform = detectPlatformFromListings(priceSource) || detailsExtract.platform || null;
+  // ensure we have a concise gameName
+  const candidateGameName = chooseBestGameName(priceSource, detailsExtract);
+  // prefer explicit extraction from top item details, otherwise majority-vote inference
+  // pass preferred names so listings whose cleaned titles match the chosen game name are weighted
+  const preferredNames = [];
+  if (detailsExtract && detailsExtract.gameName) preferredNames.push(detailsExtract.gameName);
+  if (candidateGameName) preferredNames.push(candidateGameName);
+  try { if (normalizedQuery) preferredNames.push(normalizedQuery); } catch (e) {}
+  const inferredPlatform = detailsExtract.platform || detectPlatformFromListings(priceSource, preferredNames) || null;
+
+  // normalize platform label for client display
+  const normalizedPlatform = normalizePlatformLabel(inferredPlatform) || inferredPlatform || null;
 
   // compute counts for transparency
   const rawCount = soldListingsRaw.length;
@@ -471,9 +953,8 @@ app.post('/api/search', async (req, res) => {
   const filteredBreakdown = { graded: nGraded, priceOutliers: nPriceOutliers };
 
   const out = {
-        query,
-        title: (browseItems.length ? browseItems[0].title : query),
-        upc: query,
+    query,
+    title: (browseItems.length ? browseItems[0].title : query),
         categoryId: (data.categoryId || null),
         thumbnail: (browseItems.length ? browseItems[0].thumbnail : '/vite.svg'),
         avgPrice: round(avgPrice),
@@ -481,7 +962,7 @@ app.post('/api/search', async (req, res) => {
         maxPrice: round(maxPrice),
         // include potential extracted specifics from the top item or inferred from listings
   gameName: detailsExtract.gameName || candidateGameName || null,
-  platform: inferredPlatform,
+  platform: normalizedPlatform,
         releaseYear: detailsExtract.releaseYear || null,
   // expose filtered soldListings (hide graded/collector items) for frontend parsing
   soldListings: filteredSource,
@@ -489,15 +970,26 @@ app.post('/api/search', async (req, res) => {
   sampleSize: Array.isArray(filteredSource) ? filteredSource.length : 0,
   gradedOmitted: nGraded,
   // keep raw list for debugging if needed
-  soldListingsRaw: soldListingsRaw,
+  // include a small, slimmed sample of raw listings to reduce payload size; include full raw only when debugFull=true
+  soldListingsRaw: ((req.body && req.body.debugFull) ? soldListingsRaw : (Array.isArray(soldListingsRaw) ? soldListingsRaw.slice(0,10).map(l => ({ id: l.id, title: l.title, price: l.price, thumbnail: l.thumbnail, itemHref: l.itemHref, upc: l.upc || null, platform: l.platform || null })) : [])),
   rawCount,
   filteredCount,
   filteredBreakdown,
         fetchedAt: new Date().toISOString(),
       };
   // cache for short TTL to speed up repeated scans; await to reduce race conditions
-  try { await setCache(`search:${query}`, out, 30000); } catch(e) { console.warn('[search] cache set failed', e && e.message); }
-      return res.json(out);
+  // send response first, then do a fire-and-forget cache write so slow cache backends
+  // don't affect the server timing header or client roundtrip.
+  try {
+    res.json(out);
+  } catch (e) {
+    try { return res.json(out); } catch (e2) { return; }
+  }
+  // fire-and-forget cache write (no tracing) to avoid blocking
+  try {
+    setCache(`search:${query}`, out, 30000).catch((e) => { console.warn('[search] cache set failed', e && e.message); });
+  } catch (e) {}
+  return;
     } catch (e) {
       console.warn('eBay token/search failed, returning mock result', e && e.message);
       const mock = {
@@ -522,6 +1014,204 @@ app.post('/api/search', async (req, res) => {
   }
 });
 
+// lightweight suggestion endpoint: returns recent cached search titles or recent items matching q
+app.get('/api/suggest', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toString().trim().toLowerCase();
+    if (!q) return res.json({ suggestions: [] });
+    const out = [];
+    // try to read recent explicit list from cache key 'dr_recent' (if written by frontend)
+    try {
+      const recent = await getCache('dr_recent');
+      if (Array.isArray(recent)) {
+        for (const r of recent) {
+          const label = (r && (r.title || r.query)) || r || '';
+          if (!label) continue;
+          if (label.toLowerCase().includes(q)) out.push({ label, source: 'recent' });
+          if (out.length >= 10) break;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    // also check cache keys for simple 'search:' entries (fallback to in-memory Map)
+    try {
+      // fallbackCache is not exported; use cache.get to attempt known keys pattern 'search:' by scanning fallback map keys
+      // Since we don't have direct access to internal map here, attempt several common transformations
+      const sampleKeys = [];
+      // try a few candidate keys from hypothetical recent queries in localStorage style
+      for (let i = 0; i < 10; i++) sampleKeys.push(`search:${q}`);
+      // attempt to read 'search:{q}' directly
+      const maybe = await getCache(`search:${q}`);
+      if (maybe && maybe.title) out.push({ label: maybe.title, source: 'cache' });
+    } catch (e) {}
+
+    // dedupe and cut to max 5
+    const seen = new Set();
+    const final = [];
+    for (const s of out) {
+      const k = (s.label || '').trim();
+      if (!k) continue;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      final.push({ label: k, source: s.source || 'server' });
+      if (final.length >= 5) break;
+    }
+    return res.json({ suggestions: final });
+  } catch (e) {
+    console.warn('[suggest] failed', e && e.message);
+    return res.json({ suggestions: [] });
+  }
+});
+
+// removed debug route after unifying extraction
+
+// Persist recent items sent from frontend (optional). Body should be an array of recent items or a single item.
+app.post('/api/recent', async (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload) return res.status(400).json({ ok: false, error: 'missing-payload' });
+    // normalize to array of simple objects { query, title }
+    const arr = Array.isArray(payload) ? payload : [payload];
+    const normalized = arr.map(it => ({ query: it.query || it.title || '', title: it.title || it.query || '' })).filter(it => it.query);
+    // merge with existing dr_recent (server-side) deduping by query, keeping newest first
+    const existing = (await getCache('dr_recent')) || [];
+    const merged = [];
+    const seen = new Set();
+    for (const it of normalized.concat(existing)) {
+      if (!it || !it.query) continue;
+      if (seen.has(it.query)) continue;
+      seen.add(it.query);
+      merged.push(it);
+      if (merged.length >= 50) break;
+    }
+    await setCache('dr_recent', merged, 1000 * 60 * 60 * 24 * 7); // keep for 7 days
+    return res.json({ ok: true, count: merged.length });
+  } catch (e) {
+    console.warn('[recent] save failed', e && e.message);
+    return res.status(500).json({ ok: false, error: e && e.message });
+  }
+});
+
+// Improve suggestion lookup by token overlap and simple prefix matching against server-side `dr_recent` list
+app.get('/api/suggest-v2', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toString().trim().toLowerCase();
+    if (!q || q.length < 2) return res.json({ suggestions: [] });
+    const recent = (await getCache('dr_recent')) || [];
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const scored = [];
+    for (const r of recent) {
+      const label = (r && (r.title || r.query)) || '';
+      const llo = label.toLowerCase();
+      let score = 0;
+      // require at least one token overlap to consider
+      const overlap = tokens.reduce((s, t) => s + (llo.includes(t) ? 1 : 0), 0);
+      if (overlap === 0) continue;
+      // prefix match highest
+      if (llo.startsWith(q)) score += 100;
+      // token match boosts
+      score += overlap * 12;
+      // shorter labels get a slight boost
+      score += Math.max(0, 5 - Math.floor(llo.length / 40));
+      scored.push({ label, score });
+    }
+    scored.sort((a,b) => b.score - a.score);
+    const final = scored.slice(0, 8).map(s => ({ label: s.label, source: 'recent' }));
+    return res.json({ suggestions: final });
+  } catch (e) {
+    return res.json({ suggestions: [] });
+  }
+});
+
+// eBay Browse-backed suggestions: fetch item summaries and return cleaned, deduped titles
+app.get('/api/ebay-suggest', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toString().trim();
+    if (!q || q.length < 2) return res.json({ suggestions: [] });
+    const cacheKey = `ebay_suggest:${q.toLowerCase()}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json({ suggestions: cached });
+
+    // need an OAuth app token for Browse API
+    let token = null;
+    try { token = await getEbayAppToken(); } catch (e) { token = null; }
+    if (!token) return res.json({ suggestions: [] });
+
+    const url = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
+    const params = { q, limit: 50 };
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'X-EBAY-C-MARKETPLACE-ID': process.env.EBAY_MARKETPLACE_ID || 'EBAY_US'
+    };
+    try {
+      const r = await axiosGetWithRetry(url, { params, headers }, 2, 200);
+      const items = (r && r.data && r.data.itemSummaries) || [];
+      // filter out obviously unrelated categories early: prefer video game related categories
+      const GAME_CATEGORY_HINTS = ['video games', 'video games & consoles', 'video games consoles', 'gaming', 'games'];
+      // score titles to prefer prefix matches and closer token matches
+      const qlo = q.toLowerCase();
+      const scored = [];
+      for (const it of items) {
+        const rawTitle = (it.title || '').trim();
+        if (!rawTitle) continue;
+        // cleaned title for display but keep raw for scoring
+        const cleaned = cleanListingTitleForName(rawTitle) || rawTitle;
+        const llo = cleaned.toLowerCase();
+        // require that at least one query token appears in the cleaned title
+        const qtokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+        if (qtokens.length) {
+          const overlap = qtokens.reduce((s,t) => s + (llo.includes(t) ? 1 : 0), 0);
+          // require at least one overlap; if query is multi-word prefer at least half tokens
+          const minRequired = qtokens.length >= 3 ? Math.ceil(qtokens.length / 2) : 1;
+          if (overlap < minRequired) continue; // skip unrelated titles
+        }
+        // prefer items whose category path suggests video game content
+        const itemCategory = (it.categoryPath || (it.primaryCategory && it.primaryCategory.categoryName) || '').toLowerCase();
+        const isGameCategory = GAME_CATEGORY_HINTS.some(h => itemCategory.includes(h));
+        let score = 0;
+        if (llo.startsWith(qlo)) score += 200;
+        const idx = llo.indexOf(qlo);
+        if (idx >= 0) score += Math.max(0, 50 - idx);
+  // token matches
+  const qtokens2 = qlo.split(/\s+/).filter(Boolean);
+  for (const t of qtokens2) if (llo.includes(t)) score += 10;
+  // small boost for being in a game category
+  if (isGameCategory) score += 40;
+        // shorter and cleaner titles slightly preferred
+        score += Math.max(0, 8 - Math.floor(llo.length / 30));
+        scored.push({ label: cleaned, raw: rawTitle, score });
+      }
+      scored.sort((a,b) => b.score - a.score);
+      const seen = new Set();
+      const out = [];
+      for (const s of scored) {
+        const label = s.label || s.raw;
+        if (!label) continue;
+        if (seen.has(label)) continue;
+        seen.add(label);
+        // try to extract a category hint from the original item if present
+        const item = items.find(it => (cleanListingTitleForName((it.title||'').trim()) || (it.title||'').trim()) === s.label) || {};
+        const category = item && (item.categoryPath || (item.primaryCategory && item.primaryCategory.categoryName)) || null;
+  // if category exists and is not a game category, downrank it or skip when we already have many game matches
+        const catLow = (category || '').toLowerCase();
+        const isCatGame = GAME_CATEGORY_HINTS.some(h => catLow.includes(h));
+        if (!isCatGame && out.length >= 3) continue; // keep first few focused on games
+        out.push({ label, source: 'ebay', score: s.score, category });
+        if (out.length >= 12) break;
+      }
+      // cache for short duration
+      try { await setCache(cacheKey, out, 1000 * 60 * 1); } catch (e) {}
+      return res.json({ suggestions: out });
+    } catch (e) {
+      console.warn('[ebay-suggest] failed', e && e.message);
+      return res.json({ suggestions: [] });
+    }
+  } catch (e) {
+    return res.json({ suggestions: [] });
+  }
+});
+
 // add lightweight logging middleware for search route bodies
 app.use((req, res, next) => {
   if (req.path === '/api/search') {
@@ -530,6 +1220,11 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// NOTE: server timing middleware is defined earlier to avoid double-wrapping `res.json`.
+// The earlier middleware attaches `X-Server-Duration-ms`, `X-Request-Id`, and logs
+// per-step timing to `server.log`. Keep that single implementation to ensure
+// consistent timing and prevent duplicated/conflicting traces.
 
 function startServer(port) {
   const server = app.listen(port, () => {
