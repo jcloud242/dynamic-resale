@@ -36,6 +36,81 @@
   align-items: center;
   padding: 6px 2px;
 }
+.dr-header-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dr-mode-icon {
+  background: transparent;
+  border: 0;
+  color: rgba(230, 238, 248, 0.5);
+  padding: 6px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.dr-mode-icon.active {
+  color: var(--dr-accent);
+  background: rgba(255,255,255,0.04);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+}
+
+.dr-header-left::after {
+  content: "";
+  width: 1px;
+  height: 28px;
+  background: rgba(255,255,255,0.06);
+  margin-left: 8px;
+  margin-right: 12px;
+  display: inline-block;
+}
+
+.dr-shutter-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  position: relative;
+}
+.dr-shutter {
+  background: transparent;
+  border: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  transition: transform 160ms ease;
+  cursor: pointer;
+  position: relative;
+  z-index: 40;
+}
+.dr-shutter:active { transform: scale(0.96); }
+
+/* pulsing ring centered and modest size */
+.dr-shutter::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  /* pulse intentionally disabled for a more neutral capture UX */
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 30;
+  transition: transform 160ms ease, opacity 160ms ease;
+  opacity: 0.0;
+}
+/* active, short pulse when clicking */
+.dr-shutter.shutter-active::after {
+  /* kept for compatibility but does not render by default */
+  transform: translate(-50%, -50%) scale(0.98);
+  opacity: 0;
+}
 .dr-camera-title {
   font-weight: 700;
   font-size: 16px;
@@ -65,6 +140,9 @@
   font-size: 13px;
   color: #9aa7b2;
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .dr-camera-actions {
   display: flex;
@@ -78,6 +156,9 @@
   border: 0;
   background: #1f2937;
   color: var(--dr-accent);
+}
+.dr-capture-btn {
+  display: none; /* replaced by centered shutter */
 }
 
 .dr-camera-video-wrap {
@@ -124,7 +205,7 @@
 
 .dr-camera-video-wrap .dr-frame-inner {
   /* reliable dim-only frame: large outside box-shadow produces a clean punched-out dim */
-  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.72);
 }
 .dr-target-overlay {
   position: absolute;
@@ -204,6 +285,7 @@
 
 /* more explicit pulse transform on the target center when dr-pulse class is present */
 .dr-pulse .dr-target-center {
+  /* pulse effect preserved for target center but kept very subtle */
   animation: dr-pulse-key 760ms cubic-bezier(0.2, 0.9, 0.3, 1) 1;
 }
 
@@ -420,17 +502,17 @@
   background: rgba(255, 255, 255, 0.06);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
 }
-.dr-capture-btn {
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 0;
-  background: #0ea5a6;
-  color: #04202a;
-  font-weight: 700;
-}
-.dr-capture-btn:active {
-  transform: translateY(1px);
-}
+
+/* remove any leftover inline capture button */
+.dr-capture-btn { display: none !important; }
+
+/* Hide shutter in barcode mode to avoid duplicate UI */
+.dr-shutter.barcode { display: none; }
+
+/* Make header title sit next to icons */
+.dr-camera-header { justify-content: flex-start; gap: 8px; align-items: center; }
+.dr-camera-title { margin-left: 6px; }
+.dr-camera-close { margin-left: auto; }
 
 /* small status dot and text */
 .dr-status {

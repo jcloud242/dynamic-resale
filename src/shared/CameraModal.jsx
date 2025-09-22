@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./camera.css";
+import { LuScanBarcode, LuSearch } from 'react-icons/lu';
+import { MdOutlineMotionPhotosOn, MdMotionPhotosOn } from 'react-icons/md';
+import { RiCameraAiLine } from "react-icons/ri";
+import { FaWindowClose } from 'react-icons/fa';
 // ZXing will be dynamically imported inside the component to avoid module-time issues
 
 export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
@@ -48,6 +52,7 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
   const zxModuleRef = useRef(null);
   const firstStartRef = useRef(true);
   const [currentMode, setCurrentMode] = useState(mode);
+  const [shutterActive, setShutterActive] = useState(false);
 
   // pre-warm ZXing decoder on mount (non-blocking)
   useEffect(() => {
@@ -754,7 +759,23 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
     >
       <div className={`dr-camera-modal`}>
         <div className="dr-camera-header">
-          <div className="dr-camera-title">{currentMode === "barcode" ? "Barcode Scanner" : "Image Capture"}</div>
+          <div className="dr-header-left">
+            <button
+              className={`dr-mode-icon ${currentMode === 'barcode' ? 'active' : ''}`}
+              aria-label="Barcode mode"
+              onClick={() => setCurrentMode('barcode')}
+            >
+              <LuScanBarcode size={24} />
+            </button>
+            <button
+              className={`dr-mode-icon ${currentMode === 'photo' || currentMode === 'image' ? 'active' : ''}`}
+              aria-label="Photo mode"
+              onClick={() => setCurrentMode('image')}
+            >
+              <RiCameraAiLine size={24} />
+            </button>
+          </div>
+          <div className="dr-camera-title">{currentMode === "barcode" ? "Barcode Scanner" : "Photo Search"}</div>
           <button
             className="dr-camera-close"
             aria-label="Close camera"
@@ -772,7 +793,7 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
               } catch (e) {}
             }}
           >
-            ×
+            <FaWindowClose size={20} />
           </button>
         </div>
         <div className={`dr-camera-body ${bodySuccessClass}`}>
@@ -847,10 +868,7 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
             <span className={`dr-status ${(currentMode === 'photo' || currentMode === 'image') ? 'dr-status-photo' : (autoAccepting || lastResult) ? 'dr-status-success' : scanning ? 'dr-status-scanning' : 'dr-status-idle'}`} aria-hidden />
             {currentMode === 'photo' || currentMode === 'image' ? (
               <>
-                <div>Photo mode — frame the item inside the card guide</div>
-                <div style={{ marginTop: 8 }}>
-                  <button className="dr-capture-btn" onClick={capturePhoto}>Capture</button>
-                </div>
+                <span>Photo mode — frame the item inside the card guide</span>
               </>
             ) : (
               scanning ? 'Scanning for barcodes...' : lastResult ? `Found: ${lastResult}` : 'No barcode yet'
@@ -901,34 +919,27 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
           )}
         </div>
         <div className="dr-camera-actions">
-          <div className="dr-mode-toggle" role="tablist" aria-label="Camera mode">
+          {/* center shutter icon (replaces footer capture button) */}
+          <div className="dr-shutter-wrap">
             <button
-              className={`dr-mode-btn ${currentMode === 'barcode' ? 'active' : ''}`}
-              onClick={() => setCurrentMode('barcode')}
-              role="tab"
-              aria-selected={currentMode === 'barcode'}
+              className={`dr-shutter ${currentMode === 'photo' || currentMode === 'image' ? 'photo' : 'barcode'} ${shutterActive ? 'shutter-active' : ''}`}
+              aria-label="Capture"
+              onClick={() => {
+                // small visual pulse on click
+                setShutterActive(true);
+                setTimeout(() => setShutterActive(false), 220);
+                if (currentMode === 'photo' || currentMode === 'image') capturePhoto();
+                else captureFrame();
+              }}
             >
-              Barcode
-            </button>
-            <button
-              className={`dr-mode-btn ${(currentMode === 'photo' || currentMode === 'image') ? 'active' : ''}`}
-              onClick={() => setCurrentMode('image')}
-              role="tab"
-              aria-selected={currentMode === 'photo' || currentMode === 'image'}
-            >
-              Photo
+              {/* outline vs filled handled in CSS and SVG icons if available */}
+              {currentMode === 'photo' || currentMode === 'image' ? (
+                <MdMotionPhotosOn size={38} />
+              ) : (
+                <MdOutlineMotionPhotosOn size={38} />
+              )}
             </button>
           </div>
-          <div style={{ width: 12 }} />
-          {(currentMode === 'photo' || currentMode === 'image') ? (
-            <button className="dr-capture-btn" onClick={capturePhoto}>
-              Capture
-            </button>
-          ) : (
-            <button className="dr-capture-btn" onClick={() => captureFrame()}>
-              Capture
-            </button>
-          )}
         </div>
         <canvas ref={canvasRef} style={{ display: "none" }} />
       </div>
