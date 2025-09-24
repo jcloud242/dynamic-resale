@@ -44,10 +44,9 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
       return;
     }
     setHelperText(null);
-    // eager local filtering first
+    // eager local filtering first (kept for fallback) but prefer server suggestions when available
     const filteredLocal = (suggestions || []).map(s => ({ label: s && (s.query || s) || s, source: 'recent' }))
-      .filter(s => s.label && String(s.label).toLowerCase().includes(term)).slice(0,4);
-  setVisibleSuggestions(filteredLocal);
+      .filter(s => s.label && String(s.label).toLowerCase().includes(term)).slice(0,6);
     // schedule server suggestions
     setLoadingSuggest(true);
     suggestTimer.current = setTimeout(async () => {
@@ -70,24 +69,20 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
           if (!s) return false;
           const label = (s.label || '').toLowerCase();
           const cat = (s.category || '').toLowerCase();
-          const tokens = ['edition','nintendo','switch','ps5','ps4','wii','3ds','game','xbox','playstation','ds'];
+          const tokens = ['nintendo switch','switch','ps5','ps4','wii u','wii','3ds','ds','xbox','playstation','edition'];
           for (const t of tokens) if (label.includes(t) || cat.includes(t)) return true;
           return false;
         };
-        // first include local recents
-        for (const s of filteredLocal) {
-          if (!seen.has(s.label)) { seen.add(s.label); merged.push(s); }
-        }
-        // next, include server suggestions but collect games separately to promote
+        // first include server suggestions and collect games separately to promote
+        const serverFiltered = server.map(s => ({ label: s.label || s, source: s.source || 'server', category: s.category || null }));
         const gameBuckets = [];
         const otherBuckets = [];
-        for (const s of server) {
+        for (const s of serverFiltered) {
           const lab = s && s.label;
           if (!lab) continue;
           if (seen.has(lab)) continue;
           seen.add(lab);
-          const obj = { label: lab, source: s.source || 'server', category: s.category || null };
-          if (isLikelyGame(obj)) gameBuckets.push(obj); else otherBuckets.push(obj);
+          if (isLikelyGame(s)) gameBuckets.push(s); else otherBuckets.push(s);
         }
         for (const g of gameBuckets) {
           merged.push(g);
@@ -96,6 +91,12 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
         for (const o of otherBuckets) {
           if (merged.length >= 6) break;
           merged.push(o);
+        }
+        // then fill with local recents if still sparse
+        if (merged.length < 6) {
+          for (const s of filteredLocal) {
+            if (!seen.has(s.label)) { seen.add(s.label); merged.push(s); if (merged.length >= 6) break; }
+          }
         }
   // if still sparse, try eBay-backed suggestions to make the experience feel live
   if (merged.length < 4) {

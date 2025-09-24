@@ -29,5 +29,24 @@
 .dr-omit-info:focus-visible{outline:none;box-shadow:0 0 0 4px var(--focus-ring)}
 .dr-toast{margin-left:8px;font-size:13px;color:var(--muted);background:rgba(0,0,0,0.04);padding:8px;border-radius:8px;margin-top:8px}
 
-.dr-resultcard:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.12)}
-.dr-resultcard:focus-within{box-shadow:0 12px 30px rgba(0,0,0,0.08);outline:none}
+.dr-resultcard{transition: none}
+
+/* wrapper hover/focus lifts both card and chart together to avoid overlap */
+.dr-resultcard-wrap{transition:transform var(--motion-duration) ease, box-shadow var(--motion-duration) ease}
+.dr-resultcard-wrap:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.12)}
+.dr-resultcard-wrap:focus-within{box-shadow:0 12px 30px rgba(0,0,0,0.08);outline:none}
+
+/* chart styles */
+.dr-chart-toggle{background:transparent;border:0;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;padding:6px;border-radius:6px;cursor:pointer}
+.dr-chart-toggle svg{color:var(--muted)}
+.dr-chart-container{margin-top:8px;margin-left:0;margin-right:0;padding:6px 0}
+
+/* chart panel below the card */
+.dr-chart-panel{margin-top:8px;padding:8px;border-radius:8px;background:var(--card-bg);box-shadow:var(--input-elev);width:100%}
+.dr-chart-panel .dr-mini-chart{height:84px}
+
+/* position the toggle visually at bottom-right of the stats area */
+.dr-resultcard{position:relative}
+.dr-stats .dr-chart-toggle{position:absolute;right:8px;bottom:8px}
+
+/* no local :root variables here — rely on global theme variables in App.css */

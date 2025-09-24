@@ -1,0 +1,37 @@
+.dr-chart-panel{box-sizing:border-box}
+.dr-mini-chart{width:80%;height:84px;display:block;margin:0 auto}
+.dr-mini-empty{display:flex;align-items:center;justify-content:center;color:var(--muted);width:80%;margin:0 auto}
+
+/* chart panel animation helpers (used by ResultCard) */
+.dr-chart-panel{
+	overflow:hidden;
+	transition:opacity 200ms ease, max-height 240ms ease;
+	opacity:1;
+	max-height:240px; /* visible state */
+	padding-top:12px;
+	margin-bottom:0;
+	padding-left:12px;
+	padding-right:12px;
+}
+.dr-chart-panel.closed{
+	opacity:0;
+	max-height:0;
+	padding-top:0;
+	padding-bottom:0;
+}
+
+/* push content down smoothly when chart is open */
+.dr-chart-panel:not(.closed){
+  margin-bottom:16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dr-chart-panel, .dr-resultcard-wrap { transition: none !important; }
+}
+
+/* consistent chart height */
+.dr-mini-chart{height:84px}
+.dr-chart-panel .dr-mini-chart{height:84px}
+
+/* wrapper that keeps card + dropdown aligned */
+.dr-resultcard-wrap{max-width:100%;display:block}

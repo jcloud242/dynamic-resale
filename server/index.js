@@ -47,6 +47,54 @@ console.log('ENV load:', {
     return parts[0].split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
+  // Normalize queries for cache keys and matching (lowercase, remove punctuation, collapse separators)
+  function normalizeQuery(s) {
+    if (!s) return '';
+    try {
+      let t = String(s).trim().toLowerCase();
+      // replace multiple whitespace and common separators with single space
+      t = t.replace(/[\s\-_/\\]+/g, ' ');
+      // remove extraneous punctuation except alphanumerics and spaces
+      t = t.replace(/[^a-z0-9\s]/g, '');
+      t = t.replace(/\s+/g, ' ').trim();
+      return t;
+    } catch (e) { return String(s).trim().toLowerCase(); }
+  }
+
+  // Shared helper: score candidate labels against a raw query and return sorted suggestions
+  function scoreCandidates(rawQ, candidates = [], opts = {}) {
+    const out = [];
+    if (!rawQ) return out;
+    const qNorm = normalizeQuery(rawQ);
+    const qtokens = qNorm.split(/\s+/).filter(Boolean);
+    const GAME_CATEGORY_HINTS = opts.gameHints || ['video games','video games & consoles','gaming','games'];
+    for (const c of (candidates || [])) {
+      try {
+        const labelRaw = (c && (c.label || c)) || '';
+        if (!labelRaw) continue;
+        const cleaned = (cleanListingTitleForName(labelRaw) || labelRaw).toLowerCase();
+        const category = (c && c.category) ? String(c.category).toLowerCase() : '';
+        // count token overlap
+        const overlap = qtokens.reduce((s, t) => s + (cleaned.includes(t) ? 1 : 0), 0);
+        const minRequired = qtokens.length >= 3 ? Math.ceil(qtokens.length / 3) : 1;
+        if (overlap < minRequired) continue;
+        let score = 0;
+        if (cleaned.startsWith(qNorm)) score += 140;
+        const idx = cleaned.indexOf(qNorm);
+        if (idx >= 0) score += Math.max(0, 60 - idx);
+        for (const t of qtokens) if (cleaned.includes(t)) score += 10;
+        // small boost if category suggests games
+        for (const h of GAME_CATEGORY_HINTS) if (category.includes(h)) { score += 30; break; }
+        // shorter labels slightly preferred
+        score += Math.max(0, 6 - Math.floor(cleaned.length / 36));
+        out.push({ label: labelRaw, score, category: c && c.category ? c.category : null, raw: c });
+      } catch (e) {}
+    }
+    out.sort((a,b) => b.score - a.score);
+    const max = opts.max || 12;
+    return out.slice(0, max).map(s => ({ label: s.label, source: (s.raw && s.raw.source) || 'server', category: s.category }));
+  }
+
 const app = express();
 // expose custom tracing headers to the browser so client can read them
 app.use(cors({ exposedHeaders: ['X-Server-Duration-ms', 'X-Request-Id'] }));
@@ -368,19 +416,7 @@ app.post('/api/search', async (req, res) => {
   try { if (req && req.trace) req.trace('handler-start'); } catch (e) {}
     if (!query) return res.status(400).json({ error: 'missing-query' });
 
-    // normalize query for cache keys and API calls (remove extra whitespace, lower, strip punctuation)
-    function normalizeQuery(s) {
-      if (!s) return '';
-      try {
-        let t = String(s).trim().toLowerCase();
-        // replace multiple whitespace and separators
-        t = t.replace(/[\s\-_/\\]+/g, ' ');
-        // remove extraneous punctuation except alphanumerics and spaces
-        t = t.replace(/[^a-z0-9\s]/g, '');
-        t = t.replace(/\s+/g, ' ').trim();
-        return t;
-      } catch (e) { return String(s).trim(); }
-    }
+    // use top-level normalizeQuery
 
     // If no eBay credentials are configured, or token acquisition fails, fall back
     // to a lightweight mocked response so local development works offline.
@@ -978,16 +1014,39 @@ app.post('/api/search', async (req, res) => {
         fetchedAt: new Date().toISOString(),
       };
   // cache for short TTL to speed up repeated scans; await to reduce race conditions
-  // send response first, then do a fire-and-forget cache write so slow cache backends
-  // don't affect the server timing header or client roundtrip.
+  // send response first (ensures client isn't blocked by cache writes)
   try {
     res.json(out);
   } catch (e) {
     try { return res.json(out); } catch (e2) { return; }
   }
-  // fire-and-forget cache write (no tracing) to avoid blocking
+  // fire-and-forget cache write (no tracing) to avoid blocking. Use the normalized cacheKey so
+  // other endpoints (eg. /api/suggest) can lookup `search:{normalized}` consistently.
   try {
-    setCache(`search:${query}`, out, 30000).catch((e) => { console.warn('[search] cache set failed', e && e.message); });
+    setCache(cacheKey, out, 30000).catch((e) => { console.warn('[search] cache set failed', e && e.message); });
+  } catch (e) {}
+  // also append this query/title to `dr_recent` in the background so suggestions improve over time
+  try {
+    (async () => {
+      try {
+        const cur = (await getCache('dr_recent')) || [];
+        const entry = { query: query, title: out.title || query };
+        // dedupe by normalized query
+        const qn = normalizeQuery(entry.query || entry.title || '');
+        const merged = [];
+        const seen = new Set();
+        merged.push(entry);
+        seen.add(qn);
+        for (const e of cur) {
+          const en = normalizeQuery((e && (e.query || e.title)) || '');
+          if (!en || seen.has(en)) continue;
+          seen.add(en);
+          merged.push(e);
+          if (merged.length >= 50) break;
+        }
+        await setCache('dr_recent', merged, 1000 * 60 * 60 * 24 * 7);
+      } catch (e) {}
+    })();
   } catch (e) {}
   return;
     } catch (e) {
@@ -1017,7 +1076,8 @@ app.post('/api/search', async (req, res) => {
 // lightweight suggestion endpoint: returns recent cached search titles or recent items matching q
 app.get('/api/suggest', async (req, res) => {
   try {
-    const q = (req.query.q || '').toString().trim().toLowerCase();
+    const rawQ = (req.query.q || '').toString().trim();
+    const q = normalizeQuery(rawQ);
     if (!q) return res.json({ suggestions: [] });
     const out = [];
     // try to read recent explicit list from cache key 'dr_recent' (if written by frontend)
@@ -1042,7 +1102,7 @@ app.get('/api/suggest', async (req, res) => {
       // try a few candidate keys from hypothetical recent queries in localStorage style
       for (let i = 0; i < 10; i++) sampleKeys.push(`search:${q}`);
       // attempt to read 'search:{q}' directly
-      const maybe = await getCache(`search:${q}`);
+  const maybe = await getCache(`search:${q}`);
       if (maybe && maybe.title) out.push({ label: maybe.title, source: 'cache' });
     } catch (e) {}
 
@@ -1078,11 +1138,14 @@ app.post('/api/recent', async (req, res) => {
     const existing = (await getCache('dr_recent')) || [];
     const merged = [];
     const seen = new Set();
-    for (const it of normalized.concat(existing)) {
-      if (!it || !it.query) continue;
-      if (seen.has(it.query)) continue;
-      seen.add(it.query);
-      merged.push(it);
+    // store both raw title and normalized query for matching
+    const normed = normalized.map(it => ({ query: it.query, title: it.title, qNorm: normalizeQuery(it.query) }));
+    const existNormed = existing.map(it => ({ query: it.query, title: it.title, qNorm: normalizeQuery(it.query || it.title || '') }));
+    for (const it of normed.concat(existNormed)) {
+      if (!it || !it.qNorm) continue;
+      if (seen.has(it.qNorm)) continue;
+      seen.add(it.qNorm);
+      merged.push({ query: it.query, title: it.title });
       if (merged.length >= 50) break;
     }
     await setCache('dr_recent', merged, 1000 * 60 * 60 * 24 * 7); // keep for 7 days
@@ -1096,29 +1159,13 @@ app.post('/api/recent', async (req, res) => {
 // Improve suggestion lookup by token overlap and simple prefix matching against server-side `dr_recent` list
 app.get('/api/suggest-v2', async (req, res) => {
   try {
-    const q = (req.query.q || '').toString().trim().toLowerCase();
+    const rawQ = (req.query.q || '').toString().trim();
+    const q = normalizeQuery(rawQ);
     if (!q || q.length < 2) return res.json({ suggestions: [] });
     const recent = (await getCache('dr_recent')) || [];
-    const tokens = q.split(/\s+/).filter(Boolean);
-    const scored = [];
-    for (const r of recent) {
-      const label = (r && (r.title || r.query)) || '';
-      const llo = label.toLowerCase();
-      let score = 0;
-      // require at least one token overlap to consider
-      const overlap = tokens.reduce((s, t) => s + (llo.includes(t) ? 1 : 0), 0);
-      if (overlap === 0) continue;
-      // prefix match highest
-      if (llo.startsWith(q)) score += 100;
-      // token match boosts
-      score += overlap * 12;
-      // shorter labels get a slight boost
-      score += Math.max(0, 5 - Math.floor(llo.length / 40));
-      scored.push({ label, score });
-    }
-    scored.sort((a,b) => b.score - a.score);
-    const final = scored.slice(0, 8).map(s => ({ label: s.label, source: 'recent' }));
-    return res.json({ suggestions: final });
+    const candidates = recent.map(r => ({ label: (r && (r.title || r.query)) || '', category: null, source: 'recent' }));
+    const scored = scoreCandidates(rawQ, candidates, { max: 8 });
+    return res.json({ suggestions: scored });
   } catch (e) {
     return res.json({ suggestions: [] });
   }
@@ -1127,9 +1174,10 @@ app.get('/api/suggest-v2', async (req, res) => {
 // eBay Browse-backed suggestions: fetch item summaries and return cleaned, deduped titles
 app.get('/api/ebay-suggest', async (req, res) => {
   try {
-    const q = (req.query.q || '').toString().trim();
-    if (!q || q.length < 2) return res.json({ suggestions: [] });
-    const cacheKey = `ebay_suggest:${q.toLowerCase()}`;
+    const rawQ = (req.query.q || '').toString().trim();
+    if (!rawQ || rawQ.length < 2) return res.json({ suggestions: [] });
+    const qNorm = normalizeQuery(rawQ);
+    const cacheKey = `ebay_suggest:${qNorm}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json({ suggestions: cached });
 
@@ -1139,7 +1187,8 @@ app.get('/api/ebay-suggest', async (req, res) => {
     if (!token) return res.json({ suggestions: [] });
 
     const url = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
-    const params = { q, limit: 50 };
+  // send the raw query string to eBay for best matching, but cache under normalized key
+  const params = { q: rawQ, limit: 50 };
     const headers = {
       Authorization: `Bearer ${token}`,
       'X-EBAY-C-MARKETPLACE-ID': process.env.EBAY_MARKETPLACE_ID || 'EBAY_US'
@@ -1147,62 +1196,10 @@ app.get('/api/ebay-suggest', async (req, res) => {
     try {
       const r = await axiosGetWithRetry(url, { params, headers }, 2, 200);
       const items = (r && r.data && r.data.itemSummaries) || [];
-      // filter out obviously unrelated categories early: prefer video game related categories
-      const GAME_CATEGORY_HINTS = ['video games', 'video games & consoles', 'video games consoles', 'gaming', 'games'];
-      // score titles to prefer prefix matches and closer token matches
-      const qlo = q.toLowerCase();
-      const scored = [];
-      for (const it of items) {
-        const rawTitle = (it.title || '').trim();
-        if (!rawTitle) continue;
-        // cleaned title for display but keep raw for scoring
-        const cleaned = cleanListingTitleForName(rawTitle) || rawTitle;
-        const llo = cleaned.toLowerCase();
-        // require that at least one query token appears in the cleaned title
-        const qtokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-        if (qtokens.length) {
-          const overlap = qtokens.reduce((s,t) => s + (llo.includes(t) ? 1 : 0), 0);
-          // require at least one overlap; if query is multi-word prefer at least half tokens
-          const minRequired = qtokens.length >= 3 ? Math.ceil(qtokens.length / 2) : 1;
-          if (overlap < minRequired) continue; // skip unrelated titles
-        }
-        // prefer items whose category path suggests video game content
-        const itemCategory = (it.categoryPath || (it.primaryCategory && it.primaryCategory.categoryName) || '').toLowerCase();
-        const isGameCategory = GAME_CATEGORY_HINTS.some(h => itemCategory.includes(h));
-        let score = 0;
-        if (llo.startsWith(qlo)) score += 200;
-        const idx = llo.indexOf(qlo);
-        if (idx >= 0) score += Math.max(0, 50 - idx);
-  // token matches
-  const qtokens2 = qlo.split(/\s+/).filter(Boolean);
-  for (const t of qtokens2) if (llo.includes(t)) score += 10;
-  // small boost for being in a game category
-  if (isGameCategory) score += 40;
-        // shorter and cleaner titles slightly preferred
-        score += Math.max(0, 8 - Math.floor(llo.length / 30));
-        scored.push({ label: cleaned, raw: rawTitle, score });
-      }
-      scored.sort((a,b) => b.score - a.score);
-      const seen = new Set();
-      const out = [];
-      for (const s of scored) {
-        const label = s.label || s.raw;
-        if (!label) continue;
-        if (seen.has(label)) continue;
-        seen.add(label);
-        // try to extract a category hint from the original item if present
-        const item = items.find(it => (cleanListingTitleForName((it.title||'').trim()) || (it.title||'').trim()) === s.label) || {};
-        const category = item && (item.categoryPath || (item.primaryCategory && item.primaryCategory.categoryName)) || null;
-  // if category exists and is not a game category, downrank it or skip when we already have many game matches
-        const catLow = (category || '').toLowerCase();
-        const isCatGame = GAME_CATEGORY_HINTS.some(h => catLow.includes(h));
-        if (!isCatGame && out.length >= 3) continue; // keep first few focused on games
-        out.push({ label, source: 'ebay', score: s.score, category });
-        if (out.length >= 12) break;
-      }
-      // cache for short duration
-      try { await setCache(cacheKey, out, 1000 * 60 * 1); } catch (e) {}
-      return res.json({ suggestions: out });
+      const candidates = items.map(it => ({ label: (it.title || '').trim(), category: (it.categoryPath || (it.primaryCategory && it.primaryCategory.categoryName)) || null, source: 'ebay' }));
+      const scored = scoreCandidates(rawQ, candidates, { max: 20 });
+      try { await setCache(cacheKey, scored, 1000 * 60 * 1); } catch (e) {}
+      return res.json({ suggestions: scored });
     } catch (e) {
       console.warn('[ebay-suggest] failed', e && e.message);
       return res.json({ suggestions: [] });
