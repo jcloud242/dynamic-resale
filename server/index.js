@@ -509,18 +509,45 @@ app.post('/api/search', async (req, res) => {
           .filter(t => t.length > 1);
       }
 
-      const normalizedQuery = normalized || String(query).trim();
-      const queryIsUpc = isLikelyUpc(query) || isLikelyUpc(normalizedQuery);
+      // lightweight server-side cleaning to strip marketing noise and bracketed text
+      function cleanQuery(s) {
+        if (!s) return '';
+        let out = String(s);
+        out = out.replace(/\[[^\]]*\]/g, ' ').replace(/\([^\)]*\)/g, ' ');
+        out = out.replace(/\b(new video game|video game|standard edition|deluxe edition|collector(?:'s)? edition|preorder|sealed|cover art only)\b/ig, ' ');
+        out = out.replace(/[^a-z0-9\s]/ig, ' ');
+        out = out.replace(/\s+/g, ' ').trim();
+        return out;
+      }
+
+  const rawNorm = normalized || String(query).trim();
+  const cleaned = cleanQuery(rawNorm) || rawNorm;
+  // normalizedQuery used by downstream ranking/labeling — prefer cleaned form
+  const normalizedQuery = cleaned || rawNorm;
+  const queryIsUpc = isLikelyUpc(query) || isLikelyUpc(normalizedQuery);
       let ebayQ = '';
       if (queryIsUpc) {
         // search by UPC value directly
         ebayQ = encodeURIComponent(String(query).replace(/[^0-9]/g, ''));
       } else {
-        // include the normalized phrase; try to weight exact phrase by quoting it
-        // and also include the raw query to preserve user intent
-        const phrase = encodeURIComponent(`"${normalizedQuery}"`);
-        const loose = encodeURIComponent(normalizedQuery);
-        ebayQ = `${phrase}%20${loose}`;
+        // prefer a cleaned, looser query for browse to avoid exact-title-only matches
+        // if the cleaned query is short (<=4 words) we include an exact-phrase boost;
+        // otherwise prefer the loose form which returns broader results.
+        const wordCount = (cleaned || '').split(/\s+/).filter(Boolean).length || 0;
+        const loose = encodeURIComponent(cleaned);
+        // Only include an exact-phrase boost for short queries when the client
+        // explicitly indicates the search originated from an eBay suggestion
+        // (opts.source === 'ebay'). For manual typed searches, prefer the looser
+        // cleaned form which returns broader results and avoids overly strict
+        // exact-title-only matches.
+        const sourceHint = (opts && opts.source) ? String(opts.source).toLowerCase() : '';
+        const usePhrase = (wordCount > 0 && wordCount <= 4 && sourceHint === 'ebay');
+        if (usePhrase) {
+          const phrase = encodeURIComponent(`"${cleaned}"`);
+          ebayQ = `${phrase}%20${loose}`;
+        } else {
+          ebayQ = `${loose}`;
+        }
         // if client provided a category hint, append it to bias results
         if (opts && opts.category) {
           ebayQ = `${ebayQ}%20${encodeURIComponent(String(opts.category))}`;
@@ -659,6 +686,56 @@ app.post('/api/search', async (req, res) => {
                 }
               } catch (e) {}
             }
+          }
+        } catch (e) {}
+        // Additional heuristics: scan common top-level text fields for a 4-digit year
+        try {
+          const findYearInString = (s) => {
+            if (!s) return null;
+            try {
+              const m = String(s).match(/(?:19|20)\d{2}/g);
+              if (!m || !m.length) return null;
+              // pick the first plausible year within a sensible range
+              for (const cand of m) {
+                const y = Number(cand);
+                if (y >= 1970 && y <= (new Date().getFullYear() + 1)) return String(y);
+              }
+              return String(m[0]);
+            } catch (e) { return null; }
+          };
+          // check title/subtitle/description
+          if (!out.releaseYear) out.releaseYear = findYearInString(details.title) || null;
+          if (!out.releaseYear) out.releaseYear = findYearInString(details.subtitle) || null;
+          if (!out.releaseYear) out.releaseYear = findYearInString(details.description) || null;
+          // product-level fields
+          if (details.product) {
+            if (!out.releaseYear) out.releaseYear = findYearInString(details.product.title) || null;
+            if (!out.releaseYear) out.releaseYear = findYearInString(details.product.description) || null;
+            // also check product.aspects values more exhaustively
+            try {
+              if (details.product.aspects) {
+                for (const k of Object.keys(details.product.aspects || {})) {
+                  if (out.releaseYear) break;
+                  const vals = details.product.aspects[k];
+                  if (Array.isArray(vals)) {
+                    for (const v of vals) {
+                      const y = findYearInString(v);
+                      if (y) { out.releaseYear = y; break; }
+                    }
+                  } else {
+                    const y = findYearInString(vals);
+                    if (y) out.releaseYear = y;
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+          // a final deep scan: stringify details and look for the first plausible year
+          if (!out.releaseYear) {
+            try {
+              const s = JSON.stringify(details);
+              out.releaseYear = findYearInString(s) || null;
+            } catch (e) {}
           }
         } catch (e) {}
         return out;
@@ -844,7 +921,25 @@ app.post('/api/search', async (req, res) => {
       }
 
   // merge extractFromDetails (aspects) with unified extractor for broader coverage
-  const detailsExtract = Object.assign({}, extractFromDetails(topItemDetails), extractAllFromDetails(topItemDetails || {}));
+  let detailsExtract = Object.assign({}, extractFromDetails(topItemDetails), extractAllFromDetails(topItemDetails || {}));
+  // sanitize releaseYear: only accept a plausible 4-digit year within a sensible range
+  try {
+    const validateYear = (v) => {
+      if (!v) return null;
+      try {
+        const s = String(v).match(/(?:19|20)\d{2}/);
+        if (!s) return null;
+        const y = Number(s[0]);
+        const now = new Date().getFullYear();
+        if (y >= 1970 && y <= now + 1) return String(y);
+        return null;
+      } catch (e) { return null; }
+    };
+    if (detailsExtract && detailsExtract.releaseYear) {
+      const sanitized = validateYear(detailsExtract.releaseYear);
+      detailsExtract.releaseYear = sanitized;
+    }
+  } catch (e) {}
 
       // helper: attempt to pull a numeric UPC-like identifier from details
       function extractUpcFromDetails(details) {

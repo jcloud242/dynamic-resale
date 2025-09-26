@@ -3,6 +3,7 @@ import SearchBar from '../shared/SearchBar.jsx';
 import CameraModal from '../shared/CameraModal.jsx';
 import ResultList from '../shared/ResultList.jsx';
 import { postSearch } from '../services/api.js';
+import { cleanTitle } from '../shared/titleHelpers.js';
 import './home.css';
 import { FaHistory } from 'react-icons/fa';
 
@@ -56,8 +57,15 @@ export default function Home() {
     setActive({ query: rawQuery, title: 'Searching…', upc: rawQuery, thumbnail: '/vite.svg', avgPrice: null, minPrice: null, maxPrice: null, soldListings: [], fetchedAt: new Date().toISOString() });
   }
   setError(null);
-    const p = postSearch({ query: rawQuery, opts }).then((res) => {
+    // If the query came from a suggestion or was likely a full listing title, pass
+    // a cleaned, broader `apiQuery` to the backend to avoid overly-specific
+    // exact-title searches against eBay that return a single result.
+    const shouldClean = opts && opts.source && ['server', 'ebay', 'suggest'].includes(String(opts.source));
+    const apiQuery = shouldClean ? cleanTitle(rawQuery) || rawQuery : rawQuery;
+
+    const p = postSearch({ query: apiQuery, opts }).then((res) => {
       // persist into cache
+      // cache under the original rawQuery so UI history/recent keys remain stable
       searchCache.current.set(rawQuery, Promise.resolve(res));
       return res;
     }).catch((err) => {

@@ -13,6 +13,7 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const submittingRef = useRef(false);
   const suggestTimer = useRef(null);
+  const wrapperRef = useRef(null);
 
   useEffect(() => {
     // load recent searches from localStorage (same key used by Home.jsx)
@@ -127,6 +128,24 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
     return () => { if (suggestTimer.current) clearTimeout(suggestTimer.current); };
   }, [q, suggestions]);
 
+  // close suggestions when clicking/touching outside the search bar
+  useEffect(() => {
+    function handleClickOutside(e) {
+      try {
+        if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+          setVisibleSuggestions([]);
+          setHighlightIndex(-1);
+        }
+      } catch (err) {}
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
   function submit(e) {
     e && e.preventDefault();
     if (!q) return;
@@ -191,7 +210,7 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
   }
 
   return (
-    <form className="dr-searchbar" onSubmit={submit} autoComplete="off">
+    <form ref={wrapperRef} className="dr-searchbar" onSubmit={submit} autoComplete="off">
       <div className="dr-scan-actions">
         <button type="button" className="dr-scan-icon" aria-label="Scan barcode" onClick={() => onOpenCamera && onOpenCamera()}><LuScanBarcode size={24} /></button>
         <button type="button" className="dr-photo-icon" aria-label="Image lookup" onClick={() => onOpenImage && onOpenImage()}><RiCameraAiLine  size={24} /></button>
@@ -205,33 +224,31 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
           className="dr-search-input"
           aria-label="Search"
         />
-        {(loadingSuggest || (visibleSuggestions && visibleSuggestions.length > 0) || helperText) && (
-          <div className="dr-suggestions" role="listbox">
-            {helperText && !loadingSuggest && <div className="dr-suggest-loading">{helperText}</div>}
-            {loadingSuggest && <div className="dr-suggest-loading">Searching...</div>}
-            {!loadingSuggest && visibleSuggestions && visibleSuggestions.length > 0 && (
-              visibleSuggestions.map((s, i) => (
-                <button key={i}
-                  type="button"
-                  className={`dr-suggestion ${i === highlightIndex ? 'active' : ''}`}
-                  onMouseEnter={() => setHighlightIndex(i)}
-                  onClick={() => chooseSuggestion(s.label || s)}
-                >
-                  <div className="dr-suggestion-title">{renderHighlighted(s, q)}</div>
-                  {(() => {
-                    const parts = [];
-                    if (s && s.category) parts.push(s.category);
-                    // detect platform tokens in label as hint
-                    const label = (s && s.label) || '';
-                    const pTokens = ['Nintendo Switch','Switch','PS5','PS4','3DS','Wii U','Xbox One','PC','DS'];
-                    for (const t of pTokens) if (label.includes(t) && !parts.includes(t)) parts.push(t);
-                    return parts.length ? <div className="dr-suggestion-cat">{parts.join(' • ')}</div> : null;
-                  })()}
-                </button>
-              ))
-            )}
-          </div>
-        )}
+        <div className={`dr-suggestions ${ (loadingSuggest || (visibleSuggestions && visibleSuggestions.length > 0) || helperText) ? 'open' : '' }`} role="listbox">
+          {helperText && !loadingSuggest && <div className="dr-suggest-loading">{helperText}</div>}
+          {loadingSuggest && <div className="dr-suggest-loading">Searching...</div>}
+          {!loadingSuggest && visibleSuggestions && visibleSuggestions.length > 0 && (
+            visibleSuggestions.map((s, i) => (
+              <button key={i}
+                type="button"
+                className={`dr-suggestion ${i === highlightIndex ? 'active' : ''}`}
+                onMouseEnter={() => setHighlightIndex(i)}
+                onClick={() => chooseSuggestion(s.label || s)}
+              >
+                <div className="dr-suggestion-title">{renderHighlighted(s, q)}</div>
+                {(() => {
+                  const parts = [];
+                  if (s && s.category) parts.push(s.category);
+                  // detect platform tokens in label as hint
+                  const label = (s && s.label) || '';
+                  const pTokens = ['Nintendo Switch','Switch','PS5','PS4','3DS','Wii U','Xbox One','PC','DS'];
+                  for (const t of pTokens) if (label.includes(t) && !parts.includes(t)) parts.push(t);
+                  return parts.length ? <div className="dr-suggestion-cat">{parts.join(' • ')}</div> : null;
+                })()}
+              </button>
+            ))
+          )}
+        </div>
       </div>
       <button type="submit" className="dr-search-icon" aria-label="Search"><LuSearch size={20} /></button>
     </form>
