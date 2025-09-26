@@ -4,7 +4,8 @@ import MiniChart from './MiniChart.jsx';
 import { postSearchForce } from "../services/api.js";
 import { formatResultTitle } from "./titleHelpers.js";
 import { LuInfo } from "react-icons/lu";
-import { MdOutlineTimeline } from 'react-icons/md';
+import { MdOutlineTimeline, MdHistory } from 'react-icons/md';
+import { extractYear } from './titleHelpers.js';
 
 // Chart rendering moved to `MiniChart.jsx` to keep ResultCard focused on layout.
 
@@ -23,6 +24,12 @@ export default function ResultCard({ item, isActive = false }) {
   const [loadingRefresh, setLoadingRefresh] = useState(false);
   const [toast, setToast] = useState(null);
   const [omitHelp, setOmitHelp] = useState(null);
+  // demo mode: enable when local dev or when URL has ?demo=1 so you can test charts
+  const demoEnabled =
+    (typeof window !== "undefined" && window.location && window.location.search && window.location.search.indexOf("demo=1") !== -1) ||
+    process.env.NODE_ENV !== "production";
+
+  // Keep recent cards closed by default. Only open chart when item isActive
   const [showChart, setShowChart] = useState(Boolean(isActive));
   React.useEffect(() => {
     if (isActive) setShowChart(true);
@@ -61,9 +68,9 @@ export default function ResultCard({ item, isActive = false }) {
     typeof itemState.filteredCount === "number"
       ? itemState.filteredCount
       : Math.max(0, rawLen - shownLen);
-  // Temporary demo injection: if no timeSeries present and running in development,
-  // inject a small mock series so the MiniChart renders for demos. Remove before production.
-  if ((!itemState.timeSeries || !itemState.timeSeries.avg || itemState.timeSeries.avg.length === 0) && process.env.NODE_ENV !== 'production') {
+  // Temporary demo injection: if no timeSeries present and running in development or demo mode,
+  // inject a small mock series so the MiniChart renders for demos. Controlled by ?demo=1 or NODE_ENV.
+  if ((!itemState.timeSeries || !itemState.timeSeries.avg || itemState.timeSeries.avg.length === 0) && demoEnabled) {
     // create a simple 12-point series with slight variation around avgPrice
     try {
       const base = (itemState.avgPrice && Number(itemState.avgPrice)) || 20;
@@ -89,69 +96,80 @@ export default function ResultCard({ item, isActive = false }) {
       <div className="dr-main">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div className="dr-title">{displayTitle}</div>
-          {itemState.platform && (
-            <div className="dr-badge" title={itemState.platform}>
-              {itemState.platform}{itemState.releaseYear ? ` • ${itemState.releaseYear}` : ''}
-            </div>
-          )}
         </div>
-        <div className="dr-meta">{metaLine}</div>
-        <div className="dr-meta-sub">{ts}</div>
-        <div style={{ marginTop: 8 }}>
+        <div className="dr-meta" style={{marginTop:4,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          {/* value-only badges: [Nintendo Switch] [2021] */}
+          {(() => {
+            const platformVal = itemState.platform || '';
+            const yearVal = itemState.releaseYear || extractYear(itemState.soldListings || [], itemState.title || '') || '';
+            const vals = [platformVal, yearVal].filter(Boolean);
+            return vals.map((v, i) => (
+              <span key={i} className="dr-flat-badge">{v}</span>
+            ));
+          })()}
+        </div>
+        <div className="dr-meta-sub" style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
           <button
-            className="dr-refresh"
+            className="dr-refresh-inline"
+            aria-label="Refresh"
             onClick={handleRefresh}
             disabled={loadingRefresh}
+            title="Refresh"
           >
-            Refresh
+            <MdHistory size={16} />
+            <span className="dr-refresh-ts">{ts}</span>
           </button>
           {toast && <span className="dr-toast">{toast}</span>}
         </div>
       </div>
-      <div className="dr-stats">
-        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:8}}>
-          <button
-            className="dr-avg-info"
-            aria-label="Show price info"
-            onClick={() => {
-              const used = (typeof itemState.sampleSize === 'number' && itemState.sampleSize >= 0)
-                ? itemState.sampleSize
-                : (Array.isArray(itemState.soldListings) ? itemState.soldListings.length : 0);
-              const raw = (typeof itemState.rawCount === 'number' && itemState.rawCount >= 0)
-                ? itemState.rawCount
-                : (Array.isArray(itemState.soldListingsRaw) ? itemState.soldListingsRaw.length : 0);
-              const gradedCount = (itemState.filteredBreakdown && itemState.filteredBreakdown.graded) || (itemState.gradedOmitted || 0);
-              let text = '';
-              if (used > 0) {
-                if (raw && raw > used) {
-                  text = `*Average price based on ${used} sold`;
-                } else {
-                  text = `*Average price based on ${used} sold`;
-                }
-              } else {
-                text = '*Average price could not be computed (no usable sold listings)';
-              }
-              if (gradedCount > 0) text += ` — excludes ${gradedCount} graded listings`;
-              setOmitHelp(omitHelp ? null : text);
-              if (!omitHelp) setTimeout(() => setOmitHelp(null), INFO_AUTO_HIDE_MS);
-            }}
-          >
-            <LuInfo size={10} />
-          </button>
-          <div className="dr-avg">${fmt(itemState.avgPrice)}</div>
-          <button
-            className="dr-chart-toggle"
-            aria-label="Toggle trend chart"
-            aria-expanded={showChart}
-            aria-controls={`chart-${itemState.query || itemState.title || 'chart'}`}
-            onClick={() => setShowChart(s => !s)}
-            title="Show trend"
-          >
-            <MdOutlineTimeline size={18} />
-          </button>
-        </div>
-        <div className="dr-minmax">
-          Min ${fmt(itemState.minPrice)} • Max ${fmt(itemState.maxPrice)}
+        <div className="dr-stats">
+        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end'}}>
+          <div className="dr-stats-inner">
+            <div className="dr-avg-row">
+              <div className="dr-avg">${fmt(itemState.avgPrice)}</div>
+              <button
+                className="dr-avg-info"
+                aria-label="Show price info"
+                onClick={() => {
+                  const used = (typeof itemState.sampleSize === 'number' && itemState.sampleSize >= 0)
+                    ? itemState.sampleSize
+                    : (Array.isArray(itemState.soldListings) ? itemState.soldListings.length : 0);
+                  const raw = (typeof itemState.rawCount === 'number' && itemState.rawCount >= 0)
+                    ? itemState.rawCount
+                    : (Array.isArray(itemState.soldListingsRaw) ? itemState.soldListingsRaw.length : 0);
+                  const gradedCount = (itemState.filteredBreakdown && itemState.filteredBreakdown.graded) || (itemState.gradedOmitted || 0);
+                  let text = '';
+                  if (used > 0) {
+                    if (raw && raw > used) {
+                      text = `*Average price based on ${used} sold`;
+                    } else {
+                      text = `*Average price based on ${used} sold`;
+                    }
+                  } else {
+                    text = '*Average price could not be computed (no usable sold listings)';
+                  }
+                  if (gradedCount > 0) text += ` — excludes ${gradedCount} graded listings`;
+                  setOmitHelp(omitHelp ? null : text);
+                  if (!omitHelp) setTimeout(() => setOmitHelp(null), INFO_AUTO_HIDE_MS);
+                }}
+              >
+                <LuInfo size={14} />
+              </button>
+              <button
+                className="dr-chart-toggle"
+                aria-label="Toggle trend chart"
+                aria-expanded={showChart}
+                aria-controls={`chart-${(itemState.query || itemState.title || 'chart').replace(/\s+/g,'-')}`}
+                onClick={() => setShowChart(s => !s)}
+                title="Show trend"
+              >
+                <MdOutlineTimeline size={18} />
+              </button>
+            </div>
+            <div className="dr-minmax">
+              Min ${fmt(itemState.minPrice)} • Max ${fmt(itemState.maxPrice)}
+            </div>
+          </div>
         </div>
         {omitHelp && <div className="dr-omit-inline">{omitHelp}</div>}
       </div>

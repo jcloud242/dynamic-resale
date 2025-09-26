@@ -30,10 +30,21 @@ export default function MiniChart({ series = {}, width = 380, height = 110, acce
 
   return (
     <svg className="dr-mini-chart" width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <linearGradient id="miniAvgFill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="6%" stopColor="var(--primary)" stopOpacity="0.18" />
+          <stop offset="95%" stopColor="var(--primary)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       <rect x="0" y="0" width={width} height={height} fill="none" />
       {minPath && <path d={minPath} fill="none" strokeOpacity={0.28} strokeWidth={1} stroke="var(--muted)" strokeLinejoin="round" strokeLinecap="round" />}
       {maxPath && <path d={maxPath} fill="none" strokeOpacity={0.28} strokeWidth={1} stroke="var(--muted)" strokeLinejoin="round" strokeLinecap="round" />}
-      {avgPath && <path d={avgPath} fill="none" stroke={accent} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+      {avgPath && (
+        <>
+          <path d={`${avgPath} L ${width} ${height} L 0 ${height} Z`} fill="url(#miniAvgFill)" opacity={0.95} />
+          <path d={avgPath} fill="none" stroke="var(--primary)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        </>
+      )}
     </svg>
   );
 }

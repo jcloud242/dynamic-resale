@@ -57,7 +57,7 @@
   box-shadow: 0 6px 18px rgba(0,0,0,0.22);
 }
 
-.dr-header-left::after {
+.dr-camera-header .dr-header-left::after {
   content: "";
   width: 1px;
   height: 28px;

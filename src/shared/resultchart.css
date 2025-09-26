@@ -1,5 +1,5 @@
 .dr-chart-panel{box-sizing:border-box}
-.dr-mini-chart{width:80%;height:84px;display:block;margin:0 auto}
+.dr-mini-chart{width:80%;height:84px;display:block;margin:0 auto;filter:drop-shadow(0 6px 14px rgba(0,0,0,0.06));shape-rendering:geometricPrecision;-webkit-backface-visibility:hidden;backface-visibility:hidden}
 .dr-mini-empty{display:flex;align-items:center;justify-content:center;color:var(--muted);width:80%;margin:0 auto}
 
 /* chart panel animation helpers (used by ResultCard) */
