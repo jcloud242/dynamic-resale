@@ -86,6 +86,8 @@ export default function Home() {
         setActive(res);
       }
       saveRecent(res);
+  // notify parent that a search completed so nav can highlight Home
+  try { if (typeof onSearchComplete === 'function') onSearchComplete(); } catch (e) {}
       // increment scan metric
       scansCountRef.current = (scansCountRef.current || 0) + 1;
       try { localStorage.setItem('dr_scan_count', String(scansCountRef.current)); } catch (e) {}
@@ -213,7 +215,7 @@ export default function Home() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
            <div className="dr-recent-header">
              <button aria-label="Open history" className="dr-history-btn" onClick={() => { /* navigate to history page later */ }}>
-               <FaHistory size={16} />
+                   <span style={{ color:"var(--accent)" }}>  <FaHistory size={16} /></span>
                <h3 style={{margin:0}}>Recent</h3>
              </button>
            </div>

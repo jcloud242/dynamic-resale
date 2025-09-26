@@ -5,3 +5,9 @@
 .dr-bottomnav button{transform-origin: center bottom}
 .dr-bottomnav button:hover{transform: scale(1.18) translateY(-6px)}
 .dr-bottomnav button:focus-visible{outline:none;box-shadow:0 0 0 6px var(--focus-ring)}
+
+/* active icon color */
+.dr-bottomnav button.active,
+.dr-bottomnav button[aria-current="true"] {
+	color: var(--accent);
+}
