@@ -15,17 +15,16 @@ export default function Header() {
         "--right-col-w": `${RIGHT_COL_WIDTH}px`,
       }}
     >
-
       <div className="dr-header-inner">
         <div className="dr-header-left">
           <div className="dr-logo">DR</div>
           <div className="dr-title">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="dr-name">Dynamic Resale</div>
-            </div>
-            <div className="dr-tag">
-              <span>Find, Price, Collect</span>
-              <ThemeToggle />
+            <div className="dr-name">Dynamic Resale</div>
+            <div className="dr-tag-row">
+              <button className="dr-tag-toggle">
+                <span className="dr-tag-pill">Find, Price, Collect</span>
+                <ThemeToggle />
+              </button>
             </div>
           </div>
         </div>
@@ -36,7 +35,7 @@ export default function Header() {
           <div className="dr-header-right-inner">
             <button className="dr-account" aria-label="Account">
               <span className="dr-account-icon">
-                <VscAccount size={20} />
+                <VscAccount />
               </span>
             </button>
           </div>
