@@ -17,8 +17,7 @@
 .dr-avg{font-weight:800;font-size:24px}
 .dr-minmax{font-size:12px;color:var(--muted)}
 
-/* cached badge removed — kept intentionally empty for future UX flags */
-.dr-loading{padding:12px;margin:8px 0;background:var(--accent);color:var(--accent-fg);border-radius:8px}
+.dr-loading{padding:12px;margin:8px 0;background:transparent;color:var(--accent);border-radius:8px}
 .dr-error{padding:12px;margin:8px 0;background:#b84b4b;color:#fff;border-radius:8px}
 .dr-meta-sub{font-size:12px;color:var(--muted);margin-top:4px}
 .dr-refresh{margin-left:6px;background:var(--accent);color:var(--accent-fg);border:none;padding:6px 8px;border-radius:6px;cursor:pointer}
@@ -42,6 +41,13 @@
 .dr-resultcard-wrap{transition:transform var(--motion-duration) ease, box-shadow var(--motion-duration) ease;background:var(--card-bg);border-radius:12px;border:1px solid hsl(var(--border));box-shadow:var(--input-elev);padding:12px;margin-bottom:12px}
 .dr-resultcard-wrap:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.12)}
 .dr-resultcard-wrap:focus-within{box-shadow:0 12px 30px rgba(0,0,0,0.08);outline:none}
+
+/* When the result wrapper is used as a loading/starter box, apply the accent
+	background and ensure text uses the accent foreground. This selector is
+	placed with higher specificity (wrapper + class) to override the default
+	.dr-resultcard-wrap background which appears later in the file. */
+.dr-resultcard-wrap.dr-loading{background:transparent;color:var(--fg);border-color:hsl(var(--border))}
+.dr-resultcard-wrap.dr-loading .dr-starter-text{color:var(--accent)}
 
 /* chart styles */
 .dr-chart-toggle{background:transparent;border:0;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;padding:6px;border-radius:6px;cursor:pointer}

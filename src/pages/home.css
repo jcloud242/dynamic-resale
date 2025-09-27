@@ -10,8 +10,23 @@
 
 /* Recent list wrapper with dynamic visible rows and vertical scrollbar */
 .dr-recent-header{display:flex;align-items:center;gap:8px}
-.dr-history-btn{background:transparent;border:0;padding:0;display:flex;align-items:center;gap:8px;color:var(--fg);cursor:pointer}
-.dr-history-btn svg{color:inherit}
+.dr-history-btn{background:transparent;border:0;padding:0;display:inline-flex;align-items:center;gap:6px;color:var(--fg);cursor:pointer}
+.dr-history-btn svg{color:var(--accent)}
+
+/* Starter card shown before first search */
+/* constrain starter card to the same width as result cards and center it */
+.dr-starter-card{width:100%;max-width:574px;margin:12px auto;padding:12px;border-radius:12px;background:transparent;border:1px solid hsl(var(--border));box-shadow:var(--input-elev);box-sizing:border-box}
+/* match visual height of result cards but keep content vertically centered */
+.dr-starter-card{min-height:64px}
+.dr-starter-inner{display:flex;align-items:center;gap:12px;padding:4px;min-height:64px;justify-content:center}
+.dr-starter-text{color:var(--muted);font-size:15px;text-align:center;width:100%}
+/* disable the hover lift that's applied to result cards */
+.dr-starter-card:hover{transform:none !important;box-shadow:var(--input-elev) !important}
+/* ensure the starter card never lifts like regular result cards */
+.dr-resultcard-wrap.dr-starter-card{transition:box-shadow 160ms ease !important;max-width:574px;margin:12px auto;box-sizing:border-box}
+.dr-resultcard-wrap.dr-starter-card:hover{transform:none !important}
+.dr-starter-card:focus-within{box-shadow:var(--input-elev);outline:none}
+.dr-starter-card{transition:box-shadow 160ms ease}
 .dr-recent-wrapper{max-height:calc(var(--recent-row-height,96px) * 4 + 12px);overflow-y:auto;padding-right:6px;margin-top:8px}
 .dr-recent-wrapper.small{max-height:calc(var(--recent-row-height,96px) * 3 + 12px)}
 

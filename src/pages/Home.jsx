@@ -15,6 +15,8 @@ export default function Home() {
   const [camera, setCamera] = useState({ open: false, mode: 'barcode' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // show starter only when there's no active search result; do not persist a 'seen' flag
+  const [showStarter, setShowStarter] = useState(true);
   // cache ongoing and completed searches to avoid duplicate network calls
   const searchCache = React.useRef(new Map());
   const lastQueryRef = React.useRef(null);
@@ -26,6 +28,11 @@ export default function Home() {
     // on first visit we have more real-estate — show up to 4
     setRecent(r.slice(0, recentVisibleCount));
   }, []);
+
+  // ensure starter appears whenever there is no active result (launch/refresh)
+  useEffect(() => {
+    try { setShowStarter(!active); } catch (e) {}
+  }, [active]);
 
   async function handleSearch(query, opts = {}) {
     if (!query) return;
@@ -88,6 +95,8 @@ export default function Home() {
       saveRecent(res);
   // notify parent that a search completed so nav can highlight Home
   try { if (typeof onSearchComplete === 'function') onSearchComplete(); } catch (e) {}
+    // hide starter while an active result is shown
+    try { setShowStarter(false); } catch (e) {}
       // increment scan metric
       scansCountRef.current = (scansCountRef.current || 0) + 1;
       try { localStorage.setItem('dr_scan_count', String(scansCountRef.current)); } catch (e) {}
@@ -201,10 +210,18 @@ export default function Home() {
           onOpenImage={() => setCamera({ open: true, mode: 'image' })}
         />
       </div>
-      
+        {/* Starter card: shows until first successful search or until dismissed */}
+        {showStarter && (
+        <div className={`dr-resultcard-wrap dr-starter-card ${loading ? 'dr-loading' : ''}`}>
+          <div className="dr-starter-inner">
+            <div className="dr-starter-text">{loading ? 'Searching…' : 'Scan a barcode, take a photo or enter a search to get started.'}</div>
+          </div>
+        </div>
+      )}
+
 
       <section className="dr-results">
-        {loading && <div className="dr-loading">Searching…</div>}
+  {loading && !showStarter && <div className="dr-loading">Searching…</div>}
         {error && <div className="dr-error">Error: {typeof error === 'string' ? error : JSON.stringify(error)}</div>}
         {active && (
           <div>
@@ -215,7 +232,7 @@ export default function Home() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
            <div className="dr-recent-header">
              <button aria-label="Open history" className="dr-history-btn" onClick={() => { /* navigate to history page later */ }}>
-                   <span style={{ color:"var(--accent)" }}>  <FaHistory size={16} /></span>
+               <FaHistory size={16} />
                <h3 style={{margin:0}}>Recent</h3>
              </button>
            </div>
