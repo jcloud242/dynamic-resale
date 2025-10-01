@@ -4,12 +4,12 @@ import MiniChart from './MiniChart.jsx';
 import { postSearchForce } from "../services/api.js";
 import { formatResultTitle } from "./titleHelpers.js";
 import { LuInfo } from "react-icons/lu";
-import { MdOutlineTimeline, MdHistory } from 'react-icons/md';
+import { MdOutlineTimeline, MdHistory, MdPlaylistAdd } from 'react-icons/md';
 import { extractYear } from './titleHelpers.js';
 
 // Chart rendering moved to `MiniChart.jsx` to keep ResultCard focused on layout.
 
-export default function ResultCard({ item, isActive = false }) {
+export default function ResultCard({ item, isActive = false, hideChart = false, onAnalyticsClick = null }) {
   if (!item) return null;
   const [itemState, setItemState] = useState(item);
   // keep local state in sync when parent `item` prop changes
@@ -52,6 +52,13 @@ export default function ResultCard({ item, isActive = false }) {
       setLoadingRefresh(false);
       setTimeout(() => setToast(null), 1500);
     }
+  }
+  async function handleAddToPlaylist(e) {
+    // prevent bubbling to the refresh button
+    try { e && e.stopPropagation && e.stopPropagation(); } catch (e) {}
+    // placeholder action: show a toast so user sees it worked
+    setToast('Added to playlist');
+    setTimeout(() => setToast(null), 1200);
   }
   const { displayTitle, meta } = formatResultTitle(itemState);
   const metaLine = meta;
@@ -117,7 +124,22 @@ export default function ResultCard({ item, isActive = false }) {
             title="Refresh"
           >
             <MdHistory size={16} />
-            <span className="dr-refresh-ts">{ts}</span>
+            <span className="dr-refresh-ts">{ts}
+              <span
+                className="dr-playlist-inline"
+                title="Add to playlist"
+                onClick={(e) => {
+                  // prevent the playlist icon click from bubbling to the parent
+                  // refresh button which would trigger a refresh
+                  try {
+                    e && e.stopPropagation && e.stopPropagation();
+                    e && e.preventDefault && e.preventDefault();
+                  } catch (err) {}
+                }}
+              >
+                <MdPlaylistAdd size={16} />
+              </span>
+            </span>
           </button>
           {toast && <span className="dr-toast">{toast}</span>}
         </div>
@@ -160,7 +182,13 @@ export default function ResultCard({ item, isActive = false }) {
                 aria-label="Toggle trend chart"
                 aria-expanded={showChart}
                 aria-controls={`chart-${(itemState.query || itemState.title || 'chart').replace(/\s+/g,'-')}`}
-                onClick={() => setShowChart(s => !s)}
+                onClick={() => {
+                  if (hideChart) {
+                    try { if (onAnalyticsClick) onAnalyticsClick(itemState); } catch (e) {}
+                  } else {
+                    setShowChart(s => !s);
+                  }
+                }}
                 title="Show trend"
               >
                 <MdOutlineTimeline size={18} />

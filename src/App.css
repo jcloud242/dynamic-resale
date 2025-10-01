@@ -46,6 +46,8 @@
   --fg: #EAEBED;
   --muted: rgba(234,235,237,0.7);
   --card-bg: #2B2D31;
+  /* use card background as the default thumb color so it matches cards in dark mode */
+  --scroll-thumb: var(--card-bg);
   --logo-fg: #dbeeea;
   --elevation: 0 6px 18px rgba(0,0,0,0.35);
   --input-elev: 0 2px 6px rgba(0,0,0,0.3);
@@ -63,10 +65,16 @@
   --muted: rgba(28,40,38,0.6);
   --card-bg: #ffffff;
   --logo-fg: #1c2826;
+  --scroll-thumb: #1f1f1f; /* darker thumb in light mode to mimic previous look */
   --elevation: 0 6px 18px rgba(28,40,38,0.06);
   --input-elev: 0 2px 6px rgba(28,40,38,0.06);
   --accent: #ED254E;
   --accent-fg: #fff;
+}
+
+/* dark theme thumb override: ensure thumb matches card background */
+:root:not([data-theme='light']) {
+  --scroll-thumb: var(--card-bg);
 }
 
 body { background: var(--bg); color: var(--fg); }

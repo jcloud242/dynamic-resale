@@ -1,4 +1,11 @@
 .dr-home{padding:16px;padding-bottom:100px}
+.dr-home{background:var(--bg);color:var(--fg)}
+
+/* Strong home-scoped overrides to protect theme visuals from accidental global overrides */
+.dr-home .dr-searchbar, .dr-home .dr-results, .dr-home .dr-recent-wrapper, .dr-home .dr-resultcard-wrap { color: var(--fg) !important; background: transparent !important }
+.dr-home .dr-search-input { background: var(--card-bg) !important; color: var(--fg) !important }
+.dr-home .dr-resultcard-wrap { background: var(--card-bg) !important; border-color: hsl(var(--border)) !important }
+.dr-history{padding:16px;padding-bottom:100px}
 .dr-actions{display:flex;flex-direction:column;gap:12px}
 .dr-scan-buttons{display:flex;gap:8px}
 .dr-scan-buttons button{padding:10px;border-radius:10px;border:0;background:var(--card-bg);color:var(--fg);box-shadow:var(--input-elev)}
@@ -27,7 +34,7 @@
 .dr-resultcard-wrap.dr-starter-card:hover{transform:none !important}
 .dr-starter-card:focus-within{box-shadow:var(--input-elev);outline:none}
 .dr-starter-card{transition:box-shadow 160ms ease}
-.dr-recent-wrapper{max-height:calc(var(--recent-row-height,96px) * 4 + 12px);overflow-y:auto;padding-right:6px;margin-top:8px}
+.dr-recent-wrapper{max-height:calc(var(--recent-row-height,96px) * 4 + 12px);overflow:visible;padding-right:6px;margin-top:8px;position:relative}
 .dr-recent-wrapper.small{max-height:calc(var(--recent-row-height,96px) * 3 + 12px)}
 
 /* Simple scrollbar styling for WebKit */
@@ -41,3 +48,75 @@
 .dr-recent-wrapper{position:relative}
 .dr-recent-wrapper::after, .dr-recent-wrapper::before{content:none}
 .dr-recent-wrapper{box-shadow:none}
+
+/* Pagination styles for History page */
+.dr-pagination{display:flex;align-items:center;gap:12px}
+.dr-pagination button{background:transparent;border:0;padding:8px 10px;border-radius:999px;cursor:pointer;color:var(--muted)}
+.dr-pagination .page-num{padding:8px 10px;border-radius:10px;cursor:pointer;color:var(--fg)}
+.dr-pagination .page-num.active{border:2px solid #2081ff;color:#0b3a8a;background:white}
+.dr-pagination .chev{font-size:18px}
+
+/* History page tag styles */
+.dr-history-tag{display:inline-flex;align-items:center;background:transparent;border-radius:10px;padding:0;overflow:visible}
+.dr-history-tag-btn{background:rgba(255,255,255,0.02);border:0;padding:6px 10px;border-radius:10px;font-weight:600;letter-spacing:0.02em;color:var(--fg);cursor:pointer;font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+.dr-history-tag-btn:hover{background:rgba(255,255,255,0.04)}
+.dr-history-tag.active .dr-history-tag-btn{background:rgba(0,0,0,0.06)}
+.dr-history-tag-x{margin-left:8px;color:var(--muted);font-weight:700;padding-left:8px}
+
+/* subtle filter dropdown overlay used on History */
+.dr-overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:transparent;display:flex;align-items:flex-start;justify-content:center;z-index:80}
+.dr-overlay-panel{background:var(--card-bg);border-radius:8px;padding:12px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 12px 30px rgba(0,0,0,0.12);min-width:160px;color:var(--fg)}
+.dr-overlay-panel h4{margin:0 0 8px 0;color:var(--fg)}
+.dr-overlay-panel button{background:transparent;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--fg)}
+.dr-overlay-panel button:hover{background:rgba(0,0,0,0.04)}
+
+/* hide the spacer button (not used) */
+.dr-empty-btn{display:none}
+.dr-filter-btn{background:transparent;border:1px solid rgba(0,0,0,0.06);padding:8px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;color:var(--fg)}
+.dr-filter-btn svg{width:22px;height:22px;vertical-align:middle;color:inherit;fill:none;stroke:currentColor;stroke-width:1.2}
+
+/* Keep a single canonical scrollbar style for the recent-wrapper used on Home and History */
+.dr-recent-wrapper{scrollbar-width:thin;scrollbar-color:#2B2D31 transparent}
+.dr-recent-wrapper::-webkit-scrollbar{width:8px}
+.dr-recent-wrapper::-webkit-scrollbar-thumb{background:#2B2D31;border-radius:8px}
+.dr-recent-wrapper::-webkit-scrollbar-track{background:transparent}
+
+/* Stronger fallback to ensure the filter icon matches other icons and respects theme colors */
+.dr-filter-btn, .dr-filter-btn:focus, .dr-filter-btn:active { color: var(--fg) !important; }
+.dr-filter-btn svg { fill: none !important; stroke: currentColor !important; stroke-width: 1.4 !important; color: inherit !important; }
+
+/* VERY specific override inside History to ensure filter icon matches SearchBar icons */
+.dr-history .dr-filter-btn, .dr-history .dr-filter-btn:focus, .dr-history .dr-filter-btn:active { color: var(--fg) !important; }
+.dr-history .dr-filter-btn svg { width:22px;height:22px; vertical-align:middle; fill:none !important; stroke:currentColor !important; color:inherit !important; }
+
+/* Also match search icon rules as a fallback */
+.dr-filter-btn .dr-search-icon svg, .dr-filter-btn .dr-scan-icon svg, .dr-filter-btn .dr-photo-icon svg { fill: none !important; stroke: currentColor !important; color: inherit !important; }
+
+/* Tag adder (plus icon) */
+.dr-tag-adder{display:inline-flex;align-items:center;gap:8px}
+.dr-tag-adder button{background:transparent;border:0;color:var(--muted);padding:8px;border-radius:8px;cursor:pointer}
+.dr-tag-adder input{background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,0.06);padding:6px 8px;color:var(--fg);outline:none}
+
+/* Utility class to match searchbar icon button styles */
+.dr-icon-btn{padding:10px;border-radius:12px;border:1px solid transparent;background:var(--card-bg);color:var(--fg);display:flex;align-items:center;justify-content:center}
+.dr-icon-btn svg{width:22px;height:22px;color:inherit;fill:none;stroke:currentColor}
+
+/* Ensure any inline SVG children (paths, g, circle, etc) also inherit currentColor */
+.dr-icon-inner svg, .dr-icon-inner svg * { fill: none !important; stroke: currentColor !important; color: inherit !important; }
+
+/* Strong override: ensure filter SVG and its child paths use the foreground color
+	(some icon libraries set presentation attributes that can be hard to override) */
+.dr-filter-btn svg, .dr-filter-btn svg * { color: var(--fg) !important; fill: var(--fg) !important; stroke: var(--fg) !important; }
+
+/* Ensure the recent-wrapper creates an inner scroll area; keep sizing conservative so pagination is reachable */
+/* recent scroll area uses native scrollbar */
+.dr-recent-wrapper{max-height:calc(var(--recent-row-height,96px) * 4 + 12px);overflow-y:auto;padding-right:6px;margin-top:8px;position:relative}
+.dr-recent-wrapper.small{max-height:calc(var(--recent-row-height,96px) * 3 + 12px)}
+
+/* Ensure the starter card stays visually transparent (don't inherit global card bg) */
+.dr-resultcard-wrap.dr-starter-card { background: transparent !important; }
+
+/* Visual, non-interactive scrollbar overlay to restore consistent dark thumb in
+	 light and dark themes across browsers (Safari ignores some ::-webkit rules).
+	 This is purely decorative (pointer-events: none) and won't affect scrolling. */
+/* no decorative thumb — use native scrollbars */

@@ -11,6 +11,7 @@ export default function Home() {
   const [recent, setRecent] = useState([]);
   // control how many recent items are visible in the panel
   const [recentVisibleCount, setRecentVisibleCount] = useState(4);
+  
   const [active, setActive] = useState(null);
   const [camera, setCamera] = useState({ open: false, mode: 'barcode' });
   const [loading, setLoading] = useState(false);
@@ -28,6 +29,8 @@ export default function Home() {
     // on first visit we have more real-estate — show up to 4
     setRecent(r.slice(0, recentVisibleCount));
   }, []);
+
+  
 
   // ensure starter appears whenever there is no active result (launch/refresh)
   useEffect(() => {

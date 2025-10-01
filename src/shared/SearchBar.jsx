@@ -4,7 +4,7 @@ import { LuScanBarcode, LuSearch} from 'react-icons/lu';
 import { RiCameraAiLine } from "react-icons/ri";
 
 
-export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
+export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showScans = true, placeholder = 'Search title, UPC, ISBN...' }) {
   const [q, setQ] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [visibleSuggestions, setVisibleSuggestions] = useState([]); // array of { label, source, category }
@@ -211,13 +211,15 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage }) {
 
   return (
     <form ref={wrapperRef} className="dr-searchbar" onSubmit={submit} autoComplete="off">
-      <div className="dr-scan-actions">
-        <button type="button" className="dr-scan-icon" aria-label="Scan barcode" onClick={() => onOpenCamera && onOpenCamera()}><LuScanBarcode size={24} /></button>
-        <button type="button" className="dr-photo-icon" aria-label="Image lookup" onClick={() => onOpenImage && onOpenImage()}><RiCameraAiLine  size={24} /></button>
-      </div>
+      {showScans ? (
+        <div className="dr-scan-actions">
+          <button type="button" className="dr-scan-icon" aria-label="Scan barcode" onClick={() => onOpenCamera && onOpenCamera()}><LuScanBarcode size={24} /></button>
+          <button type="button" className="dr-photo-icon" aria-label="Image lookup" onClick={() => onOpenImage && onOpenImage()}><RiCameraAiLine  size={24} /></button>
+        </div>
+      ) : null}
       <div className="dr-search-input-wrap" style={{ position: 'relative', flex: 1 }}>
         <input
-          placeholder="Search title, UPC, ISBN..."
+          placeholder={placeholder}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={handleKeyDown}

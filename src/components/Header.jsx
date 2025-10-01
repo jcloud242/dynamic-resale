@@ -21,10 +21,10 @@ export default function Header() {
           <div className="dr-title">
             <div className="dr-name">Dynamic Resale</div>
             <div className="dr-tag-row">
-              <button className="dr-tag-toggle">
+              <div className="dr-tag-toggle" role="button" tabIndex={0}>
                 <span className="dr-tag-pill">Find, Price, Collect</span>
                 <ThemeToggle />
-              </button>
+              </div>
             </div>
           </div>
         </div>
