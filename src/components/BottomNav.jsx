@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
 import "./bottomnav.css";
-import { FaHistory, FaHome } from "react-icons/fa";
-import { FaChartSimple, FaListUl } from "react-icons/fa6";
 import {
   MdHomeFilled,
   MdHistory,

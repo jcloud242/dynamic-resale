@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import './home.css';
 import SearchBar from '../shared/SearchBar.jsx';
 import ResultList from '../shared/ResultList.jsx';
-import { BsFilterSquare } from 'react-icons/bs';
 import { FaRegSquarePlus } from 'react-icons/fa6';
 import { IoFilter } from "react-icons/io5";
 
@@ -40,8 +39,10 @@ export default function History({ onNavigateToAnalytics }) {
   function normalizeTag(s) {
     if (!s) return '';
     // trim, lowercase, remove punctuation except spaces, collapse whitespace
+    // normalize unicode (remove accents), lowercase, strip punctuation, collapse whitespace
     let t = String(s).trim().toLowerCase();
-    t = t.replace(/[.,/#!$%^&*;:{}=\-_`~()\[\]"]+/g, '');
+    try { t = t.normalize('NFKD').replace(/\p{Diacritic}/gu, ''); } catch (e) { /* ignore on older runtimes */ }
+    t = t.replace(/[.,/#!$%^&*;:{}=\-_`~()\[\]"'“”‘’…•]+/g, '');
     t = t.replace(/\s+/g, ' ').trim();
     return t;
   }
@@ -49,11 +50,8 @@ export default function History({ onNavigateToAnalytics }) {
   function searchLocal(q, tagsOverride) {
     setQuery(q || '');
     const useTags = Array.isArray(tagsOverride) ? tagsOverride : activeTags;
+    // always start from the full stored recent history to avoid cumulative filtering
     let arr = (JSON.parse(localStorage.getItem('dr_recent') || '[]') || []).slice();
-    // if no query provided and we already have results loaded, use the current results as base
-    if ((!q || !q.trim()) && results && results.length) {
-      arr = results.slice();
-    }
     if (q && q.trim()) {
       const term = q.toLowerCase().trim();
       arr = arr.filter(i => (i && ((i.title || i.query || '').toLowerCase().includes(term) || (i.query || '').toLowerCase().includes(term))));
@@ -61,9 +59,16 @@ export default function History({ onNavigateToAnalytics }) {
     // apply active tags as filters (future: tag structured queries)
     if (useTags && useTags.length) {
       for (const t of useTags) {
-        const val = (t || '').toLowerCase();
-        if (!val) continue;
-        arr = arr.filter(i => (i && ((i.title || i.query || '').toLowerCase().includes(val) || (i.category || '').toLowerCase().includes(val))));
+        const normVal = normalizeTag(t || '');
+        if (!normVal) continue;
+        arr = arr.filter(i => {
+          if (!i) return false;
+          const title = normalizeTag(i.title || i.query || '');
+          if (title.includes(normVal)) return true;
+          const cat = normalizeTag(i.category || i.platform || '');
+          if (cat.includes(normVal)) return true;
+          return false;
+        });
       }
     }
     // apply sort
@@ -138,7 +143,9 @@ export default function History({ onNavigateToAnalytics }) {
   let seed = [];
   try {
     const counts = {};
-    for (const r of results || []) {
+    // derive seed from the full persisted recent history so tags remain visible
+    const full = (JSON.parse(localStorage.getItem('dr_recent') || '[]') || []).slice();
+    for (const r of full || []) {
       const cat = (r && (r.category || r.platform || '') || '').trim();
       if (!cat) continue;
       counts[cat] = (counts[cat] || 0) + 1;

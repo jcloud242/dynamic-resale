@@ -1,13 +1,48 @@
-.dr-bottomnav{position:fixed;left:0;right:0;bottom:0;height:64px;display:flex;justify-content:space-around;align-items:center;background:var(--bg);color:var(--fg);box-shadow:var(--elevation);border-top:1px solid rgba(255,255,255,0.03)}
-.dr-bottomnav button{background:transparent;border:0;color:var(--fg);display:flex;align-items:center;justify-content:center;padding:8px;border-radius:8px}
-.dr-bottomnav button:active{background:rgba(255,255,255,0.02);transform:translateY(1px)}
-.dr-bottomnav button{transition:transform var(--motion-duration) ease, background-color var(--motion-duration) ease}
-.dr-bottomnav button{transform-origin: center bottom}
-.dr-bottomnav button:hover{transform: scale(1.18) translateY(-6px)}
-.dr-bottomnav button:focus-visible{outline:none;box-shadow:0 0 0 6px var(--focus-ring)}
+.dr-bottomnav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: var(--elevation);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+.dr-bottomnav button {
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 8px;
+}
+.dr-bottomnav button:active {
+  background: rgba(255, 255, 255, 0.02);
+  transform: translateY(1px);
+}
+.dr-bottomnav button {
+  transition: transform var(--motion-duration) ease,
+    background-color var(--motion-duration) ease;
+}
+.dr-bottomnav button {
+  transform-origin: center bottom;
+}
+.dr-bottomnav button:hover {
+  transform: scale(1.18) translateY(-6px);
+}
+.dr-bottomnav button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 6px var(--focus-ring);
+}
 
 /* active icon color */
 .dr-bottomnav button.active,
 .dr-bottomnav button[aria-current="true"] {
-	color: var(--accent);
+  color: var(--accent);
 }

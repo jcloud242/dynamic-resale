@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import SearchBar from '../shared/SearchBar.jsx';
-import CameraModal from '../shared/CameraModal.jsx';
-import ResultList from '../shared/ResultList.jsx';
-import { postSearch } from '../services/api.js';
-import { cleanTitle } from '../shared/titleHelpers.js';
-import './home.css';
-import { FaHistory } from 'react-icons/fa';
+import React, { useState, useEffect } from "react";
+import "./home.css";
+import SearchBar from "../shared/SearchBar.jsx";
+import CameraModal from "../shared/CameraModal.jsx";
+import ResultList from "../shared/ResultList.jsx";
+import { postSearch } from "../services/api.js";
+import { cleanTitle } from "../shared/titleHelpers.js";
+import { MdHistory } from "react-icons/md";
 
 export default function Home() {
   const [recent, setRecent] = useState([]);
   // control how many recent items are visible in the panel
   const [recentVisibleCount, setRecentVisibleCount] = useState(4);
-  
+
   const [active, setActive] = useState(null);
-  const [camera, setCamera] = useState({ open: false, mode: 'barcode' });
+  const [camera, setCamera] = useState({ open: false, mode: "barcode" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // show starter only when there's no active search result; do not persist a 'seen' flag
@@ -21,29 +21,34 @@ export default function Home() {
   // cache ongoing and completed searches to avoid duplicate network calls
   const searchCache = React.useRef(new Map());
   const lastQueryRef = React.useRef(null);
-  const scansCountRef = React.useRef(Number(localStorage.getItem('dr_scan_count') || '0'));
+  const scansCountRef = React.useRef(
+    Number(localStorage.getItem("dr_scan_count") || "0")
+  );
 
   useEffect(() => {
     // load last 3 recent from localStorage (mock)
-    const r = JSON.parse(localStorage.getItem('dr_recent') || '[]');
+    const r = JSON.parse(localStorage.getItem("dr_recent") || "[]");
     // on first visit we have more real-estate — show up to 4
     setRecent(r.slice(0, recentVisibleCount));
   }, []);
 
-  
-
   // ensure starter appears whenever there is no active result (launch/refresh)
   useEffect(() => {
-    try { setShowStarter(!active); } catch (e) {}
+    try {
+      setShowStarter(!active);
+    } catch (e) {}
   }, [active]);
 
   async function handleSearch(query, opts = {}) {
     if (!query) return;
     // normalize if query is an object { query, category, source }
     let rawQuery = query;
-    if (typeof query === 'object' && query !== null) {
-      rawQuery = query.query || (query.label || '');
-      opts = Object.assign({}, opts, { category: query.category, source: query.source });
+    if (typeof query === "object" && query !== null) {
+      rawQuery = query.query || query.label || "";
+      opts = Object.assign({}, opts, {
+        category: query.category,
+        source: query.source,
+      });
     }
     // dedupe identical queries fired within a short span
     if (lastQueryRef.current === rawQuery) return;
@@ -61,27 +66,42 @@ export default function Home() {
       return res;
     }
 
-  setLoading(true);
-  // show a lightweight placeholder immediately for fast camera scan feedback
-  if (opts.showPlaceholder) {
-    setActive({ query: rawQuery, title: 'Searching…', upc: rawQuery, thumbnail: '/vite.svg', avgPrice: null, minPrice: null, maxPrice: null, soldListings: [], fetchedAt: new Date().toISOString() });
-  }
-  setError(null);
+    setLoading(true);
+    // show a lightweight placeholder immediately for fast camera scan feedback
+    if (opts.showPlaceholder) {
+      setActive({
+        query: rawQuery,
+        title: "Searching…",
+        upc: rawQuery,
+        thumbnail: "/vite.svg",
+        avgPrice: null,
+        minPrice: null,
+        maxPrice: null,
+        soldListings: [],
+        fetchedAt: new Date().toISOString(),
+      });
+    }
+    setError(null);
     // If the query came from a suggestion or was likely a full listing title, pass
     // a cleaned, broader `apiQuery` to the backend to avoid overly-specific
     // exact-title searches against eBay that return a single result.
-    const shouldClean = opts && opts.source && ['server', 'ebay', 'suggest'].includes(String(opts.source));
+    const shouldClean =
+      opts &&
+      opts.source &&
+      ["server", "ebay", "suggest"].includes(String(opts.source));
     const apiQuery = shouldClean ? cleanTitle(rawQuery) || rawQuery : rawQuery;
 
-    const p = postSearch({ query: apiQuery, opts }).then((res) => {
-      // persist into cache
-      // cache under the original rawQuery so UI history/recent keys remain stable
-      searchCache.current.set(rawQuery, Promise.resolve(res));
-      return res;
-    }).catch((err) => {
-      searchCache.current.delete(rawQuery);
-      throw err;
-    });
+    const p = postSearch({ query: apiQuery, opts })
+      .then((res) => {
+        // persist into cache
+        // cache under the original rawQuery so UI history/recent keys remain stable
+        searchCache.current.set(rawQuery, Promise.resolve(res));
+        return res;
+      })
+      .catch((err) => {
+        searchCache.current.delete(rawQuery);
+        throw err;
+      });
     // store promise to allow concurrent callers to share
     searchCache.current.set(rawQuery, p);
 
@@ -96,13 +116,19 @@ export default function Home() {
         setActive(res);
       }
       saveRecent(res);
-  // notify parent that a search completed so nav can highlight Home
-  try { if (typeof onSearchComplete === 'function') onSearchComplete(); } catch (e) {}
-    // hide starter while an active result is shown
-    try { setShowStarter(false); } catch (e) {}
+      // notify parent that a search completed so nav can highlight Home
+      try {
+        if (typeof onSearchComplete === "function") onSearchComplete();
+      } catch (e) {}
+      // hide starter while an active result is shown
+      try {
+        setShowStarter(false);
+      } catch (e) {}
       // increment scan metric
       scansCountRef.current = (scansCountRef.current || 0) + 1;
-      try { localStorage.setItem('dr_scan_count', String(scansCountRef.current)); } catch (e) {}
+      try {
+        localStorage.setItem("dr_scan_count", String(scansCountRef.current));
+      } catch (e) {}
       // if result was cached and silentRefresh is requested, refresh in background
       if (res && res.cached && opts.silentRefresh) {
         (async () => {
@@ -114,7 +140,7 @@ export default function Home() {
             saveRecent(fresh);
           } catch (e) {
             // ignore background refresh failures
-            console.warn('Background refresh failed', e && e.message);
+            console.warn("Background refresh failed", e && e.message);
           }
         })();
       }
@@ -126,7 +152,11 @@ export default function Home() {
         if (isBarcode) {
           (async () => {
             try {
-              const enriched = await postSearch({ query, force: true, opts: Object.assign({}, opts, { enrichUpcs: true }) });
+              const enriched = await postSearch({
+                query,
+                force: true,
+                opts: Object.assign({}, opts, { enrichUpcs: true }),
+              });
               if (lastQueryRef.current === query && enriched) {
                 setActive(enriched);
                 saveRecent(enriched);
@@ -139,8 +169,8 @@ export default function Home() {
       } catch (e) {}
       return res;
     } catch (err) {
-      console.error('Search error', err);
-      setError(err && (err.info || err.message) || 'Search failed');
+      console.error("Search error", err);
+      setError((err && (err.info || err.message)) || "Search failed");
       throw err;
     } finally {
       setLoading(false);
@@ -148,7 +178,7 @@ export default function Home() {
   }
 
   function saveRecent(res) {
-    const r = JSON.parse(localStorage.getItem('dr_recent') || '[]');
+    const r = JSON.parse(localStorage.getItem("dr_recent") || "[]");
     // move existing entry to front or add new
     const idx = r.findIndex((it) => it && it.query === res.query);
     if (idx !== -1) {
@@ -157,40 +187,51 @@ export default function Home() {
     } else {
       r.unshift(res);
     }
-    try { localStorage.setItem('dr_recent', JSON.stringify(r.slice(0, 10))); } catch (e) {}
+    try {
+      localStorage.setItem("dr_recent", JSON.stringify(r.slice(0, 10)));
+    } catch (e) {}
     // after a new search/scan, reduce visible area to 3 to keep focus on results
     setRecent(r.slice(0, 3));
     setRecentVisibleCount(3);
 
     // persist to server-side recent cache (best-effort)
     try {
-      fetch('/api/recent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: res.query, title: res.title })
+      fetch("/api/recent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: res.query, title: res.title }),
       }).catch(() => {});
     } catch (e) {}
   }
 
   function clearRecent() {
-    try { localStorage.removeItem('dr_recent'); } catch (e) {}
+    try {
+      localStorage.removeItem("dr_recent");
+    } catch (e) {}
     setRecent([]);
   }
 
   function handleDetected(payload) {
     // detection forwarded from CameraModal
     // Convert payload to a query and run search
-    if (payload.type === 'barcode') {
+    if (payload.type === "barcode") {
       // barcode scans should request UPC enrichment and be marked as barcode so
       // we can ensure the scanned UPC appears in the final metadata
-      handleSearch(payload.value, { silentRefresh: true, suppressCachedBadge: true, showPlaceholder: true, enrichUpcs: true, isBarcode: true }).catch((e) => {
-        console.error('Search failed', e);
+      handleSearch(payload.value, {
+        silentRefresh: true,
+        suppressCachedBadge: true,
+        showPlaceholder: true,
+        enrichUpcs: true,
+        isBarcode: true,
+      }).catch((e) => {
+        console.error("Search failed", e);
       });
-    } else if (payload.type === 'image') {
+    } else if (payload.type === "image") {
       // For now, mock an image-result so recent list shows a thumbnail instead of the raw data URL
       const mock = {
-        query: 'image-capture',
-        title: 'Photo lookup',
-        upc: 'image-capture',
+        query: "image-capture",
+        title: "Photo lookup",
+        upc: "image-capture",
         thumbnail: payload.value,
         avgPrice: null,
         minPrice: null,
@@ -209,41 +250,78 @@ export default function Home() {
       <div className="dr-actions">
         <SearchBar
           onSearch={handleSearch}
-          onOpenCamera={() => setCamera({ open: true, mode: 'barcode' })}
-          onOpenImage={() => setCamera({ open: true, mode: 'image' })}
+          onOpenCamera={() => setCamera({ open: true, mode: "barcode" })}
+          onOpenImage={() => setCamera({ open: true, mode: "image" })}
         />
       </div>
-        {/* Starter card: shows until first successful search or until dismissed */}
-        {showStarter && (
-        <div className={`dr-resultcard-wrap dr-starter-card ${loading ? 'dr-loading' : ''}`}>
+      {/* Starter card: shows until first successful search or until dismissed */}
+      {showStarter && (
+        <div
+          className={`dr-resultcard-wrap dr-starter-card ${
+            loading ? "dr-loading" : ""
+          }`}
+        >
           <div className="dr-starter-inner">
-            <div className="dr-starter-text">{loading ? 'Searching…' : 'Scan a barcode, take a photo or enter a search to get started.'}</div>
+            <div className="dr-starter-text">
+              {loading
+                ? "Searching…"
+                : "Scan a barcode, take a photo or enter a search to get started."}
+            </div>
           </div>
         </div>
       )}
 
-
       <section className="dr-results">
-  {loading && !showStarter && <div className="dr-loading">Searching…</div>}
-        {error && <div className="dr-error">Error: {typeof error === 'string' ? error : JSON.stringify(error)}</div>}
+        {loading && !showStarter && (
+          <div className="dr-loading">Searching…</div>
+        )}
+        {error && (
+          <div className="dr-error">
+            Error: {typeof error === "string" ? error : JSON.stringify(error)}
+          </div>
+        )}
         {active && (
           <div>
             <ResultList items={[active]} active />
           </div>
         )}
         <div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-           <div className="dr-recent-header">
-             <button aria-label="Open history" className="dr-history-btn" onClick={() => { /* navigate to history page later */ }}>
-               <FaHistory size={16} />
-               <h3 style={{margin:0}}>Recent</h3>
-             </button>
-           </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div className="dr-recent-header">
+              <button
+                aria-label="Open history"
+                className="dr-history-btn"
+                onClick={() => {
+                  /* navigate to history page later */
+                }}
+              >
+                <MdHistory size={20} />
+                <h3 style={{ margin: 0 }}>Recent</h3>
+              </button>
+            </div>
             <div>
-              <button className="dr-clear" onClick={() => { clearRecent(); }} style={{fontSize:12,padding:'6px 8px' }}>Clear Recent</button>
+              <button
+                className="dr-clear"
+                onClick={() => {
+                  clearRecent();
+                }}
+                style={{ fontSize: 12, padding: "6px 8px" }}
+              >
+                Clear Recent
+              </button>
             </div>
           </div>
-          <div className={`dr-recent-wrapper ${recentVisibleCount <= 3 ? 'small' : ''}`}>
+          <div
+            className={`dr-recent-wrapper ${
+              recentVisibleCount <= 3 ? "small" : ""
+            }`}
+          >
             <ResultList items={recent} />
           </div>
         </div>
