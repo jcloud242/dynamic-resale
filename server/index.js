@@ -138,9 +138,19 @@ app.use((req, res, next) => {
         // only persist verbose traces when explicitly enabled via env
         try {
           if (process.env.ENABLE_TRACE_LOG === '1') {
-            try { fs.appendFile(path.join(__dirname, 'server.log'), logLine + '\n', () => {}); } catch (e) {}
-            try { console.debug('[trace]', logLine); } catch (e) {}
-          }
+              try {
+                const logPath = path.join(__dirname, 'server.log');
+                // rotate if file > 5MB
+                try {
+                  const stat = fs.existsSync(logPath) ? fs.statSync(logPath) : null;
+                  if (stat && stat.size > 5 * 1024 * 1024) {
+                    try { fs.renameSync(logPath, path.join(__dirname, `server.log.1`)); } catch (e) {}
+                  }
+                } catch (e) {}
+                fs.appendFile(logPath, logLine + '\n', () => {});
+              } catch (e) {}
+              try { console.debug('[trace]', logLine); } catch (e) {}
+            }
         } catch (e) {}
       } catch (e) {}
     } catch (e) {}
@@ -382,6 +392,10 @@ async function findCompletedItemsViaFindingAPI(query, appId, entriesPerPage = 25
     return [];
   }
 }
+
+// Scraping of eBay HTML has been intentionally removed from the main branch
+// due to eBay Terms-of-Service concerns. If you need to experiment with a
+// scraper, keep it in a private/experimental branch or run a local script.
 
 // attempt to use configured port, otherwise try 5001 then increment until free
 const DEFAULT_PORT = 5001;
@@ -1165,6 +1179,155 @@ app.post('/api/search', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'search-failed' });
+  }
+});
+
+// POST /api/sold
+// body: { query: string, limit?: number, forceFinding?: boolean }
+app.post('/api/sold', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    const limit = Math.min(100, Number(req.body && req.body.limit) || 50);
+    if (!query) return res.status(400).json({ error: 'missing-query' });
+
+    // Try Finding API first if allowed (legacy AppID)
+    const findingAppId = process.env.EBAY_FINDING_APP_ID || process.env.EBAY_CLIENT_ID || null;
+    let results = [];
+    try {
+      if (findingAppId) {
+        results = await findCompletedItemsViaFindingAPI(query, findingAppId, Math.min(limit, 100)).catch(() => []);
+      }
+    } catch (e) { results = []; }
+
+    // If Finding API returned no results, do not fall back to scraping in main branch.
+    if ((!results || !results.length)) {
+      if (!findingAppId) {
+        // Clearly indicate scraping is not allowed/available
+        return res.status(422).json({ error: 'finding-appid-missing', message: 'Finding API AppID not configured. Scraping is disabled in this build.' });
+      }
+    }
+
+    // filter and basic aggregation
+    const numericPrices = (results || []).map(r => Number(r.price)).filter(n => Number.isFinite(n));
+    const filterPrices = filterOutlierPrices(numericPrices);
+    const avg = filterPrices.length ? (filterPrices.reduce((a,b)=>a+b,0)/filterPrices.length) : null;
+    const out = {
+      query,
+      count: results.length,
+      sampleSize: filterPrices.length,
+      avgPrice: avg ? Number(avg.toFixed(2)) : null,
+      minPrice: filterPrices.length ? Number(Math.min(...filterPrices).toFixed(2)) : null,
+      maxPrice: filterPrices.length ? Number(Math.max(...filterPrices).toFixed(2)) : null,
+      listings: results.slice(0, Math.min(results.length, 60)),
+      fetchedAt: new Date().toISOString(),
+      source: (results && results.length && (findingAppId && results[0] && results[0].id && String(results[0].id).match(/^\d+$/))) ? 'finding' : 'scrape'
+    };
+    return res.json(out);
+  } catch (e) {
+    console.error('[api/sold] failed', e && e.message);
+    return res.status(500).json({ error: 'sold-fetch-failed', message: e && e.message });
+  }
+});
+
+// Compute estimate from active listings (heuristic)
+function computeEstimateFromActives(listings = [], opts = {}) {
+  const out = {};
+  const prices = (listings || []).map(l => {
+    try { return Number(l.price || (l.price && l.price.value) || l.priceValue || null); } catch (e) { return null; }
+  }).filter(n => Number.isFinite(n));
+  const sampleSize = prices.length;
+  if (!sampleSize) {
+    return { sampleSize: 0, confidence: 'low', scenarios: {}, base: null };
+  }
+
+  const cleaned = filterOutlierPrices(prices);
+  const avgActive = cleaned.length ? (cleaned.reduce((a,b)=>a+b,0)/cleaned.length) : null;
+  const median = (() => { if (!cleaned.length) return null; const s = [...cleaned].sort((a,b)=>a-b); const m = Math.floor((s.length-1)/2); return s.length%2? s[m] : ((s[m]+s[m+1])/2); })();
+  const std = (() => { if (!cleaned.length) return 0; const m = avgActive; return Math.sqrt(cleaned.reduce((s,x)=>s+Math.pow(x-m,2),0)/cleaned.length); })();
+
+  // factors and defaults
+  const defaults = {
+    binFactor: 0.88,
+    bestOfferFactor: 0.92,
+    auctionFactor: 0.95,
+    feeRate: 0.15,
+    shippingEstimate: 3.5,
+  };
+  const cfg = Object.assign({}, defaults, opts || {});
+
+  const scenarios = {
+    optimistic: { saleFactor: Math.min(1.0, cfg.binFactor + 0.07) },
+    base: { saleFactor: cfg.binFactor },
+    conservative: { saleFactor: Math.max(0.6, cfg.binFactor - 0.06) },
+  };
+
+  for (const k of Object.keys(scenarios)) {
+    const s = scenarios[k];
+    const expectedSale = avgActive ? (avgActive * s.saleFactor) : null;
+    const proceedsBeforeShip = expectedSale ? (expectedSale * (1 - cfg.feeRate)) : null;
+    const netExpected = (proceedsBeforeShip !== null) ? (proceedsBeforeShip - cfg.shippingEstimate) : null;
+    const buyPrice = (opts && typeof opts.buyPrice === 'number') ? opts.buyPrice : null;
+    const refurb = (opts && typeof opts.refurbCost === 'number') ? opts.refurbCost : 0;
+    const expectedProfit = (netExpected !== null && buyPrice !== null) ? (netExpected - buyPrice - refurb) : null;
+    const expectedMargin = (expectedProfit !== null && buyPrice) ? (expectedProfit / buyPrice) : null;
+    s.expectedSale = expectedSale !== null ? Number(expectedSale.toFixed(2)) : null;
+    s.netExpected = netExpected !== null ? Number(netExpected.toFixed(2)) : null;
+    s.expectedProfit = expectedProfit !== null ? Number(expectedProfit.toFixed(2)) : null;
+    s.expectedMargin = expectedMargin !== null ? Number(expectedMargin.toFixed(3)) : null;
+  }
+
+  // confidence heuristic
+  let confidence = 'low';
+  try {
+    if (sampleSize >= 12 && (std / Math.max(0.0001, avgActive)) < 0.25) confidence = 'high';
+    else if (sampleSize >= 6) confidence = 'medium';
+  } catch (e) {}
+
+  out.sampleSize = sampleSize;
+  out.cleanedCount = cleaned.length;
+  out.avgActive = avgActive !== null ? Number(avgActive.toFixed(2)) : null;
+  out.medianActive = median !== null ? Number(median.toFixed(2)) : null;
+  out.std = Number(std.toFixed(2));
+  out.confidence = confidence;
+  out.scenarios = scenarios;
+  out.base = scenarios.base;
+  out.generatedAt = new Date().toISOString();
+  return out;
+}
+
+// POST /api/estimate/from-actives
+// body: { query: string, buyPrice?: number, refurbCost?: number, feeRate?: number, shippingEstimate?: number, limit?: number }
+app.post('/api/estimate/from-actives', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query) return res.status(400).json({ error: 'missing-query' });
+    const limit = Math.min(100, Number(req.body && req.body.limit) || 40);
+
+    // acquire token
+    const token = await getEbayAppToken().catch(() => null);
+    // build browse query like /api/search does
+    const normalized = normalizeQuery(query);
+    const cleanedQuery = (normalized || query);
+    const ebayQ = encodeURIComponent(cleanedQuery);
+    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${ebayQ}&limit=${limit}`;
+    const headers = token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    const r = await axiosGetWithRetry(url, { headers }, 2, 200).catch(() => null);
+    if (!r || !r.data) return res.status(502).json({ error: 'ebay-browse-failed' });
+    const data = r.data;
+    const browseItems = (data.itemSummaries || []).map(it => ({ id: it.itemId, title: it.title, price: (it.price && it.price.value) || null, currency: (it.price && it.price.currency) || 'USD', thumbnail: it.image && it.image.imageUrl || null, itemHref: it.itemWebUrl || null }));
+
+    // compute estimate
+    const cfg = {
+      buyPrice: (req.body && typeof req.body.buyPrice === 'number') ? req.body.buyPrice : null,
+      refurbCost: (req.body && typeof req.body.refurbCost === 'number') ? req.body.refurbCost : 0,
+      feeRate: (req.body && typeof req.body.feeRate === 'number') ? req.body.feeRate : undefined,
+      shippingEstimate: (req.body && typeof req.body.shippingEstimate === 'number') ? req.body.shippingEstimate : undefined,
+    };
+    const estimate = computeEstimateFromActives(browseItems, cfg);
+    return res.json(Object.assign({ query, source: 'actives', listingsSampleCount: browseItems.length }, estimate));
+  } catch (e) {
+    console.error('[api/estimate] failed', e && e.message);
+    return res.status(500).json({ error: 'estimate-failed', message: e && e.message });
   }
 });
 

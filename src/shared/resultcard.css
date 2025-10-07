@@ -24,7 +24,12 @@
 }
 .dr-title {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 15px;
+  line-height: 1.15;
+  line-height: 1.15;
+  max-height: 1.3em; /* clamp to 1 line */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dr-badge {
   background: rgba(0, 0, 0, 0.08);

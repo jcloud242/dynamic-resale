@@ -1,0 +1,87 @@
+/* Analytics page specific styles */
+.dr-analytics { padding: 20px; }
+.dr-analytics .dr-searchbar-wrapper { margin-top: 8px; }
+.dr-analytics .dr-main-card { display:flex; gap:18px; align-items:flex-start; margin-top:12px; background: var(--card); padding:16px; border-radius:12px; box-shadow: none; border:1px solid hsl(var(--border)); }
+.dr-analytics .dr-thumb-large { width:96px; height:96px; object-fit:cover; border-radius:8px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); align-self:center; margin-bottom:6px }
+
+.dr-analytics-title {
+	font-size:16px;
+	font-weight:700;
+	margin:0;
+	line-height:1.2;
+	max-height: 2.6em; /* approx 2 lines */
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.dr-analytics .dr-chart-panel { flex:1; }
+.dr-analytics .dr-sep { height:1px; background: hsl(var(--border)); margin:16px 0; opacity:0.06 }
+.dr-analytics .dr-table { display:flex; flex-direction:column; gap:6px; font-size:14px; }
+.dr-analytics .dr-table-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.04); }
+.dr-analytics .dr-table-row .left { max-width:80%; }
+.dr-analytics .dr-table-row .title { color: var(--fg); text-decoration:none; font-size:14px; font-weight:600; display:block; text-align:left; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition: color .12s ease; }
+.dr-analytics .dr-table-row .title:hover { color: var(--accent); text-decoration:underline; cursor:pointer }
+.dr-analytics .dr-table-row .tags { display:flex; gap:8px; margin-top:6px; color:var(--muted); font-size:12px; align-items:center }
+.dr-analytics .chip { display:inline-flex; align-items:center; padding:4px 8px; border-radius:6px; background:rgba(0,0,0,0.04); color:var(--muted); font-size:11px; margin-right:6px }
+.bought-inline { padding:2px 6px; border-radius:5px; background: rgba(0,0,0,0.03); color:var(--fg); font-weight:600; font-size:13px }
+.dr-right-panel [class*="bought"], [class*="bought"] {
+	/* force compact, inline styling for any bought-related element to avoid legacy large-badge rules */
+	padding:2px 6px !important;
+	border-radius:6px !important;
+	background: rgba(0,0,0,0.03) !important;
+	color: var(--fg) !important;
+	font-weight:600 !important;
+	font-size:13px !important;
+	display:inline-block !important;
+}
+.dr-analytics .dr-table-row .right .date { display:block; font-size:12px; color:var(--muted); margin-top:6px }
+
+/* MetricBox styles */
+.metric-box { padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02)); }
+.metric-box-dark { padding:12px 14px; border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.03)); border:1px solid rgba(0,0,0,0.28); }
+.metric-label { font-size:12px; color:var(--muted); margin-bottom:6px }
+.metric-value { font-size:18px; font-weight:700; color:var(--fg); line-height:1 }
+.metric-sub { font-size:12px; color:var(--muted); margin-top:6px }
+
+/* Top-5 list dark row styling */
+.dr-analytics .dr-table-row { padding:14px 0; }
+.dr-analytics .dr-table-row .title { color: var(--fg); font-weight:700 }
+.dr-analytics .dr-table-row .tags { margin-top:8px }
+.dr-analytics .dr-price { color: #ff2b6f; font-weight:800; font-size:18px }
+.dr-analytics .dr-table-row .meta { color: var(--muted); font-size:12px; margin-left:8px }
+.dr-analytics .dr-price { color: var(--accent); font-weight:800; font-size:18px }
+.dr-analytics .dr-table-row .right { text-align:right; min-width:120px }
+.dr-analytics .dr-table-row .right:before{ content:''; display:block; position:absolute; left:0; right:0; height:1px; margin-top:0; }
+.dr-analytics .dr-right-panel { display:flex; flex-direction:column; gap:14px; width:340px; align-items:stretch; min-width:260px }
+/* removed .bought-badge to avoid large badge styles interfering with compact inline badge */
+.dr-analytics .dr-metric { background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02)); padding:14px; border-radius:10px; border:1px solid rgba(0,0,0,0.18); display:flex; flex-direction:column; gap:6px; box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset; }
+.dr-analytics .dr-metric .kpi-value { font-size:18px; font-weight:700; color:var(--fg) }
+.dr-analytics .dr-metric .kpi-label { font-size:12px; color:var(--muted) }
+.dr-analytics .dr-slider { display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:10px; border:1px solid rgba(0,0,0,0.18); }
+
+/* make axis labels subtle and evenly spaced like the mock */
+.dr-chart-axis { width:72px; color:var(--muted); font-size:12px; text-align:right; padding-right:12px }
+.dr-chart-svg { flex:1; background: transparent; border-radius:10px }
+
+/* KPI grid styles for right panel to match mock */
+.dr-kpi-grid { display:grid; grid-template-columns: 1fr; gap:12px }
+.dr-kpi-small { padding:12px; border-radius:10px; background:transparent; border:1px solid rgba(255,255,255,0.02) }
+
+/* New chart card styles */
+.dr-chart-card { background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02)); border-radius:12px; padding:14px; border:1px solid rgba(255,255,255,0.02); }
+.dr-analytics-chart { display:block; width:100%; height:100%; }
+/* chart and thumbnail alignment helpers */
+.dr-main-card { align-items:flex-start }
+.dr-chart-panel { display:flex; align-items:center }
+.dr-chart-with-axis { display:flex; align-items:center }
+.dr-chart-axis { width:56px; color:var(--muted); font-size:12px; text-align:right; padding-right:8px }
+.dr-chart-svg { flex:1 }
+
+/* compact buy-price input used in Analytics to avoid full-width block look */
+.bought-input {
+	width: 110px !important; /* override inline width */
+	padding: 6px 8px !important;
+	border-radius: 6px !important;
+	border: 1px solid var(--muted) !important;
+	margin-top: 6px !important;
+	display: inline-block !important;
+}

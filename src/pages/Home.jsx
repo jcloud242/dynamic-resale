@@ -32,6 +32,10 @@ export default function Home() {
     setRecent(r.slice(0, recentVisibleCount));
   }, []);
 
+  // NOTE: until the backend /api/search is exercised, this app will show
+  // locally persisted mock data stored in localStorage under `dr_recent`.
+  // Use the search bar or scan a barcode to populate real search results.
+
   // ensure starter appears whenever there is no active result (launch/refresh)
   useEffect(() => {
     try {
