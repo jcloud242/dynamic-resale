@@ -27,4 +27,4 @@ dist-ssr
 *.sw?
 
 # tempProject Files
-tempProject/*
+tempProject

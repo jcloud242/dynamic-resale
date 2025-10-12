@@ -1,7 +1,8 @@
+/* main root container — allow content to scroll fully above the fixed bottom nav */
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 2rem 6.5rem; /* bottom padding reserves space for fixed bottom nav (64px) + safe area */
   text-align: center;
 }
 
@@ -78,3 +79,11 @@
 }
 
 body { background: var(--bg); color: var(--fg); }
+
+/* Ensure the top-level app wrapper also allows natural document flow */
+.App {
+  min-height: 100vh;
+  box-sizing: border-box;
+  /* extra bottom padding for safe-area-inset on mobile devices */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+}

@@ -60,11 +60,35 @@ button:focus-visible {
   :root {
     color: #213547;
     background-color: #ffffff;
+    --chart-minmax: #000; /* dark marker colors for light theme */
   }
   a:hover {
     color: #747bff;
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+/* dark theme defaults */
+:root {
+  --chart-minmax: #fff; /* light marker colors for dark theme */
+}
+
+/* explicit min/max overrides */
+:root {
+  --chart-min: #fff;
+  --chart-max: #000;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --chart-min: #fff;
+    --chart-max: #000;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-min: var(--muted);
+    --chart-max: var(--muted-contrast, #fff);
   }
 }

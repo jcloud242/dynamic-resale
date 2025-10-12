@@ -13,6 +13,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+
+/* prefer Inter for analytics titles if available */
+.dr-analytics-title, .dr-analytics .dr-table-row .title { font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif; }
+
+.dr-analytics .dr-table-row .title { display:block; max-width:100%; white-space:normal; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-clamp:2; }
 .dr-analytics .dr-chart-panel { flex:1; }
 .dr-analytics .dr-sep { height:1px; background: hsl(var(--border)); margin:16px 0; opacity:0.06 }
 .dr-analytics .dr-table { display:flex; flex-direction:column; gap:6px; font-size:14px; }
