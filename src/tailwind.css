@@ -1,22 +1,192 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Map our core colors to CSS variables for Tailwind to reference */
-  --background: 231 11% 12%;
-  --foreground: 220 8% 92%;
-  --card: 231 11% 12%;
-  --card-foreground: 220 8% 92%;
-  --primary: 348 85% 54%;
-  --accent: 336 85% 50%;
-  --border: 230 10% 22%;
-  --input: 230 10% 22%;
-  --ring: 348 85% 54%;
-  --radius: 0.5rem;
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   */
+  :root {
+    /* Light mode defaults */
+    --background: 220 8% 92%; /* #EAEBED */
+    --foreground: 170 18% 13%; /* #1C2826 */
+
+    --card: 220 8% 92%;
+    --card-foreground: 170 18% 13%;
+
+    --popover: 220 8% 92%;
+    --popover-foreground: 170 18% 13%;
+
+    --primary: 348 85% 54%; /* #ED254E */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 7% 86%;
+    --secondary-foreground: 170 18% 13%;
+
+    --muted: 220 7% 86%;
+    --muted-foreground: 170 10% 35%;
+
+    --accent: 220 12% 88%;
+    --accent-foreground: 170 18% 13%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 210 10% 80%;
+    --input: 210 10% 80%;
+    --ring: 348 85% 54%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar (unused by default but kept consistent) */
+    --sidebar-background: 220 8% 92%;
+    --sidebar-foreground: 170 18% 13%;
+    --sidebar-primary: 348 85% 54%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 12% 88%;
+    --sidebar-accent-foreground: 170 18% 13%;
+    --sidebar-border: 210 10% 80%;
+    --sidebar-ring: 348 85% 54%;
+
+    /* Dynamic muted rgba helpers for exact spec */
+    --muted-rgb: 28 40 38; /* #1C2826 */
+    --muted-alpha: 0.6;
+
+    /* Shared layout var to align right columns */
+    --right-col-w: 48px;
+  }
+
+  .dark {
+    /* Dark mode defaults */
+    --background: 231 11% 12%; /* #1C1D23 */
+    --foreground: 220 8% 92%; /* #EAEBED */
+
+    --card: 231 11% 12%;
+    --card-foreground: 220 8% 92%;
+
+    --popover: 231 11% 12%;
+    --popover-foreground: 220 8% 92%;
+
+    --primary: 348 85% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 230 10% 18%;
+    --secondary-foreground: 220 8% 92%;
+
+    --muted: 230 10% 18%;
+    --muted-foreground: 220 10% 75%;
+
+    --accent: 230 9% 16%;
+    --accent-foreground: 220 8% 92%;
+
+    --destructive: 0 62% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 230 10% 22%;
+    --input: 230 10% 22%;
+    --ring: 348 85% 54%;
+
+    --sidebar-background: 231 11% 12%;
+    --sidebar-foreground: 220 8% 92%;
+    --sidebar-primary: 348 85% 54%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 9% 16%;
+    --sidebar-accent-foreground: 220 8% 92%;
+    --sidebar-border: 230 10% 22%;
+    --sidebar-ring: 348 85% 54%;
+
+    /* Dynamic muted rgba helpers for exact spec */
+    --muted-rgb: 234 235 237; /* #EAEBED */
+    --muted-alpha: 0.7;
+  }
 }
 
 @layer base {
-  body { font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif; }
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .flat-badge {
+    @apply inline-flex items-center border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide;
+    border-radius: 0; /* flat/non-rounded */
+    background-color: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+  .text-muted-dynamic {
+    color: rgb(var(--muted-rgb) / var(--muted-alpha));
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    background: hsl(var(--card)) / 0.04;
+    color: hsl(var(--foreground));
+    cursor: pointer;
+    transition:
+      transform 0.1s ease,
+      box-shadow 0.1s ease,
+      background 0.1s ease;
+  }
+
+  .tag-chip:hover {
+    transform: translateY(-3px);
+    background: hsl(var(--card)) / 0.08;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .flat-button {
+    background: transparent;
+    border: none;
+    color: hsl(var(--foreground));
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+  .flat-button:hover {
+    background: hsl(var(--card)) / 0.04;
+  }
+
+  /* Collection gallery styles */
+  .collection-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+  }
+  .collection-thumb {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    display: block;
+    filter: saturate(0.95) contrast(0.98);
+  }
+  .collection-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 8px 10px;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.45) 100%
+    );
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
 }

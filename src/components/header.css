@@ -1,5 +1,5 @@
 .dr-header {
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--muted));
 }
 .dr-header-inner {
   max-width: 1080px;
@@ -35,12 +35,16 @@
   gap: 0;
 }
 .dr-name {
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 800;
+  font-size: 24px;
   letter-spacing: -0.02em;
   margin: 0;
-  padding-left: 6px;
-  line-height: 1;
+  /*padding-left: 6px;
+  line-height: 1;*/
+
+
+ 
+  
 }
 .dr-tag-row {
   margin-top: 0;
@@ -72,7 +76,6 @@
   border-radius: 8px;
   background: transparent;
   border: 0;
-  color: var(--fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -99,6 +102,8 @@
   font-size: 16px;
   padding: 6px;
   border-radius: 8px;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /* Let react-icons render their native SVG shapes (outline vs filled)
