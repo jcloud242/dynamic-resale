@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import "@styles/page.css";
 import "./home.css";
-import SearchBar from "../shared/SearchBar.jsx";
-import CameraModal from "../shared/CameraModal.jsx";
-import ResultList from "../shared/ResultList.jsx";
-import { postSearch } from "../services/api.js";
-import { cleanTitle } from "../shared/titleHelpers.js";
+import SearchBar from "@features/search/SearchBar.jsx";
+import CameraModal from "@features/camera/CameraModal.jsx";
+import ResultList from "@features/results/ResultList.jsx";
+import { postSearch } from "@services/api.js";
+import { cleanTitle } from "@lib/titleHelpers.js";
 import { MdHistory } from "react-icons/md";
 
-export default function Home() {
+export default function Home({ onSearchComplete = null }) {
   const [recent, setRecent] = useState([]);
   // control how many recent items are visible in the panel
   const [recentVisibleCount, setRecentVisibleCount] = useState(4);
@@ -19,9 +20,9 @@ export default function Home() {
   // show starter only when there's no active search result; do not persist a 'seen' flag
   const [showStarter, setShowStarter] = useState(true);
   // cache ongoing and completed searches to avoid duplicate network calls
-  const searchCache = React.useRef(new Map());
-  const lastQueryRef = React.useRef(null);
-  const scansCountRef = React.useRef(
+  const searchCache = useRef(new Map());
+  const lastQueryRef = useRef(null);
+  const scansCountRef = useRef(
     Number(localStorage.getItem("dr_scan_count") || "0")
   );
 
@@ -30,6 +31,9 @@ export default function Home() {
     const r = JSON.parse(localStorage.getItem("dr_recent") || "[]");
     // on first visit we have more real-estate — show up to 4
     setRecent(r.slice(0, recentVisibleCount));
+    // intentionally run once on mount; recentVisibleCount initial value is 4
+    // subsequent updates to recentVisibleCount are driven by saveRecent()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // NOTE: until the backend /api/search is exercised, this app will show
@@ -194,6 +198,9 @@ export default function Home() {
     try {
       localStorage.setItem("dr_recent", JSON.stringify(r.slice(0, 10)));
     } catch (e) {}
+    try {
+      window.dispatchEvent(new CustomEvent("dr_recent_changed"));
+    } catch (e) {}
     // after a new search/scan, reduce visible area to 3 to keep focus on results
     setRecent(r.slice(0, 3));
     setRecentVisibleCount(3);
@@ -250,7 +257,7 @@ export default function Home() {
   }
 
   return (
-    <main className="dr-home">
+  <main className="dr-page dr-home">
       <div className="dr-actions">
         <SearchBar
           onSearch={handleSearch}

@@ -1,11 +1,12 @@
-import React, { useState } from "react";
-import { MdOutlinePriceCheck } from "react-icons/md";
-import RechartsAnalytics from "../shared/RechartsAnalytics.jsx";
-import SearchBar from "../shared/SearchBar.jsx";
+import { useEffect, useMemo, useState, Component } from "react";
+import RechartsAnalytics from "@ui/charts/RechartsAnalytics.jsx";
+import SearchBar from "@features/search/SearchBar.jsx";
 import "./analytics.css";
-import ResultList from "../shared/ResultList.jsx";
-import { formatResultTitle } from "../shared/titleHelpers.js";
-import MetricBox from "../components/MetricBox.jsx";
+import "@styles/page.css";
+import ResultList from "@features/results/ResultList.jsx";
+import { formatResultTitle } from "@lib/titleHelpers.js";
+import MetricBox from "@components/MetricBox.jsx";
+
 
 // Client-side estimator (mirrors server heuristics when sold data isn't available)
 function clientComputeEstimateFromActives(listings = [], opts = {}) {
@@ -126,7 +127,7 @@ function buildAggregateSeries(recent) {
   return { avg, min: [], max: [] };
 }
 
-class ErrorBoundary extends React.Component {
+class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
     this.state = { error: null };
@@ -158,7 +159,7 @@ class ErrorBoundary extends React.Component {
 
 function AnalyticsInner({ item, onBack }) {
   // Summary dashboard with search and item-level analytics below
-  const recent = React.useMemo(() => {
+  const recent = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("dr_recent") || "[]") || [];
     } catch (e) {
@@ -199,7 +200,7 @@ function AnalyticsInner({ item, onBack }) {
   // pick a default item (first recent) if no selected
   const itemToShow = item || selectedItem || recent[0] || null;
   // memoize generated series so it doesn't change on every render (prevents twitching)
-  const series = React.useMemo(() => {
+  const series = useMemo(() => {
     return itemToShow
       ? itemToShow.timeSeries || makeYearSeries(itemToShow.avgPrice || 30)
       : makeYearSeries(30);
@@ -210,7 +211,7 @@ function AnalyticsInner({ item, onBack }) {
     if (!s) return [];
     return String(s)
       .toLowerCase()
-      .replace(/[.,/#!$%^&*;:{}=\-_`~()\[\]"]+/g, " ")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
       .split(/\s+/)
       .filter(Boolean);
   }
@@ -494,7 +495,7 @@ function AnalyticsInner({ item, onBack }) {
       : null;
 
   // Info popup
-  const [showInfo, setShowInfo] = React.useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   // compute profit given a buy price and a target sale price (helper)
   function computeProfitForSale(buy, salePriceVal) {
@@ -569,7 +570,7 @@ function AnalyticsInner({ item, onBack }) {
     itemToShow && (itemToShow.title || itemToShow.query)
       ? String(itemToShow.title || itemToShow.query)
       : "";
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {
@@ -605,7 +606,7 @@ function AnalyticsInner({ item, onBack }) {
   }
 
   return (
-    <main className="dr-analytics">
+  <main className="dr-page dr-analytics">
       <div
         style={{
           display: "flex",
@@ -613,9 +614,7 @@ function AnalyticsInner({ item, onBack }) {
           justifyContent: "flex-end",
         }}
       >
-
       </div>
-
       <div className="dr-searchbar-wrapper">
         <SearchBar
           onSearch={() => {}}
@@ -623,7 +622,6 @@ function AnalyticsInner({ item, onBack }) {
           onOpenImage={() => {}}
         />
       </div>
-
       <div className="dr-main-card">
         <img
           className="dr-thumb-large"
@@ -665,14 +663,7 @@ function AnalyticsInner({ item, onBack }) {
 
       <div className="dr-sep" />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.4fr 360px",
-          gap: 16,
-          alignItems: "start",
-        }}
-      >
+      <div className="dr-analytics-grid">
         <div>
           <div className="dr-table">
             {top5.map((r, i) => (

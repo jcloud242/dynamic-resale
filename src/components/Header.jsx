@@ -1,4 +1,4 @@
-import React from "react";
+// React import not required for JSX with Vite + React 17+ JSX runtime
 import "./header.css";
 import { LuScanBarcode } from "react-icons/lu";
 import { MdAccountCircle } from "react-icons/md";
@@ -45,11 +45,10 @@ export default function Header() {
             className="inline-flex h-9 w-9 items-center justify-center rounded-md"
           >
             <span>
-              {" "}
               <MdAccountCircle
                 className="h-6 w-6"
                 style={{ color: "#ED254E" }}
-              />{" "}
+              />
             </span>
           </button>
         </div>

@@ -1,0 +1,9 @@
+.dr-page {
+  padding: 16px;
+  padding-bottom: 100px; /* leave room for BottomNav */
+}
+
+/* Optional wrapper around SearchBar used on some pages; keep neutral spacing */
+.dr-page .dr-searchbar-wrapper {
+  margin-top: 0; /* standardize to Home baseline */
+}

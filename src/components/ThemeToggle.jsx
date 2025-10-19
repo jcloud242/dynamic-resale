@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MdLightMode, MdDarkMode } from 'react-icons/md';
 
 export default function ThemeToggle({ className = '' }) {
@@ -19,7 +19,7 @@ export default function ThemeToggle({ className = '' }) {
       root.classList.remove('dark');
       root.setAttribute('data-theme', 'light');
     }
-    try { localStorage.setItem('dr_theme', theme); } catch (e) {}
+  try { localStorage.setItem('dr_theme', theme); } catch {}
   }, [theme]);
 
   return (

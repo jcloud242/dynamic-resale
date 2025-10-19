@@ -1,6 +1,5 @@
 /* Analytics page specific styles */
-.dr-analytics { padding: 20px; }
-.dr-analytics .dr-searchbar-wrapper { margin-top: 8px; }
+/* Padding is standardized via .dr-page; page-specific tweaks go here if needed */
 .dr-analytics .dr-main-card { display:flex; gap:18px; align-items:flex-start; margin-top:12px; background: var(--card); padding:16px; border-radius:12px; box-shadow: none; border:1px solid hsl(var(--border)); }
 .dr-analytics .dr-thumb-large { width:96px; height:96px; object-fit:cover; border-radius:8px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); align-self:center; margin-bottom:6px }
 
@@ -80,6 +79,24 @@
 .dr-chart-with-axis { display:flex; align-items:center }
 .dr-chart-axis { width:56px; color:var(--muted); font-size:12px; text-align:right; padding-right:8px }
 .dr-chart-svg { flex:1 }
+
+/* Responsive grid layout for analytics details */
+.dr-analytics-grid {
+	display: grid;
+	grid-template-columns: 1.4fr 360px;
+	gap: 16px;
+	align-items: start;
+}
+
+@media (max-width: 900px) {
+	.dr-analytics-grid {
+		grid-template-columns: 1fr;
+	}
+	.dr-right-panel {
+		width: 100% !important;
+		min-width: 0 !important;
+	}
+}
 
 /* compact buy-price input used in Analytics to avoid full-width block look */
 .bought-input {
