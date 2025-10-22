@@ -126,7 +126,6 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
 											const isChecksumValid = validateUpcChecksum(sanitized);
 											if (!isChecksumValid) {
 												// don't auto-accept immediately; treat as a soft-detection
-												// push to recentDetections and require a quick repeat to confirm
 												recentDetectionsRef.current.push({
 													code: sanitized,
 													ts: Date.now(),
@@ -577,7 +576,16 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
 			setTimeout(() => setShowPulse(false), 450);
 			setAutoAccepting(false);
 			setShowFailure(false);
-			if (onDetected) onDetected(text);
+			if (onDetected) {
+				try {
+					const payload = (currentMode === 'barcode')
+					  ? { type: 'barcode', value: String(text) }
+					  : { type: 'image', value: String(text) };
+					onDetected(payload);
+				} catch (e) {
+					try { onDetected(text); } catch (_) {}
+				}
+			}
 		} finally {
 			try { reader && reader.reset && reader.reset(); } catch (e) {}
 			closingRef.current = true;
@@ -606,17 +614,14 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
 			<div className="dr-camera-modal">
 				<div className="dr-camera-header">
 					<div className="dr-header-left">
-						<button className={`dr-mode-icon ${currentMode === 'barcode' ? 'active' : ''}`} onClick={() => setCurrentMode('barcode')} title="Barcode">
+						<button className={`dr-mode-icon ${currentMode === 'barcode' ? 'active' : ''}`} onClick={() => setCurrentMode('barcode')} title="Barcode" aria-label="Barcode scanner mode">
 							<LuScanBarcode size={18} />
 						</button>
-						<button className={`dr-mode-icon ${currentMode === 'photo' ? 'active' : ''}`} onClick={() => setCurrentMode('photo')} title="Photo">
+						<button className={`dr-mode-icon ${currentMode === 'photo' ? 'active' : ''}`} onClick={() => setCurrentMode('photo')} title="Photo" aria-label="Photo mode">
 							<RiCameraAiLine size={18} />
 						</button>
-						<button className={`dr-mode-icon ${currentMode === 'image' ? 'active' : ''}`} onClick={() => setCurrentMode('image')} title="Image">
-							<LuSearch size={18} />
-						</button>
 					</div>
-					<div className="dr-camera-title">Scan</div>
+					<div className="dr-camera-title">{currentMode === 'barcode' ? 'Scanner' : 'Photo mode'}</div>
 					<button className="dr-camera-close" onClick={onClose} aria-label="Close camera">
 						<FaWindowClose />
 					</button>
@@ -633,21 +638,26 @@ export default function CameraModal({ mode = "barcode", onClose, onDetected }) {
 						<canvas ref={canvasRef} style={{ display: 'none' }} />
 					</div>
 					{error && <div className="dr-camera-error">{String(error)}</div>}
-					{brightnessHint && <div className="dr-camera-error">{String(brightnessHint)}</div>}
-					<div className="dr-shutter-wrap">
-						<button
-							className={`dr-shutter ${shutterActive ? 'shutter-active' : ''}`}
-							onClick={() => {
-								setShutterActive(true);
-								setTimeout(() => setShutterActive(false), 160);
-								// For photo/image modes we might capture still; for barcode, we trigger an immediate captureFrame attempt
-								if (currentMode === 'barcode') captureFrame();
-							}}
-							aria-label="Capture"
-						>
-							<MdMotionPhotosOn size={28} />
-						</button>
-					</div>
+										<div className="dr-camera-instructions" aria-live="polite">
+												{currentMode === 'barcode' && 'Align barcode within the frame — it will auto-detect.'}
+												{currentMode === 'photo' && 'Point at the item and tap the shutter to capture a photo.'}
+										</div>
+										{brightnessHint && <div className="dr-camera-error">{String(brightnessHint)}</div>}
+										{currentMode === 'photo' && (
+											<div className="dr-shutter-wrap">
+												<button
+													className={`dr-shutter ${shutterActive ? 'shutter-active' : ''}`}
+													onClick={() => {
+														setShutterActive(true);
+														setTimeout(() => setShutterActive(false), 160);
+														// Photo capture placeholder: in future, implement still capture and detection
+													}}
+													aria-label="Capture"
+												>
+													<MdMotionPhotosOn size={28} />
+												</button>
+											</div>
+										)}
 				</div>
 			</div>
 		</div>

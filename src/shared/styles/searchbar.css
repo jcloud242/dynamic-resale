@@ -154,6 +154,18 @@
   color: var(--muted);
   font-size: 13px;
 }
+.dr-suggest-section {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 6px 8px;
+  text-transform: none;
+}
+.dr-suggest-sep {
+  height: 1px;
+  background: rgba(0,0,0,0.12);
+  margin: 4px 0;
+}
 
 @media (max-width: 600px) {
   .dr-searchbar {

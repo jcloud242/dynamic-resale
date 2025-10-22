@@ -4,7 +4,7 @@ export function cleanTitle(title) {
   // remove bracketed or parenthetical annotations: [..] (..)
   cleaned = cleaned.replace(/\[[^\]]*\]/g, ' ').replace(/\([^)]*\)/g, ' ');
   // remove common marketing/subtitle tokens that make title matching too narrow
-  cleaned = cleaned.replace(/\b(new video game|video game|standard edition|deluxe edition|collector(?:'s)? edition|preorder|sealed)\b/ig, ' ');
+  cleaned = cleaned.replace(/\b(new video game|video game|standard edition|deluxe edition|collector(?:'s)? edition|preorder|sealed|authentic|genuine|cartridge only|disc only|manual only|complete in box|cib|loose|gold|black label|greatest hits|players choice)\b/ig, ' ');
   // strip trailing plus and similar separators, collapse whitespace
   cleaned = cleaned.replace(/[-:]+/g, ' ').replace(/\s+/g, ' ').trim();
   const plusIndex = cleaned.indexOf('+');

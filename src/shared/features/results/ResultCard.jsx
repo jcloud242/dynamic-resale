@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "../../styles/resultcard.css";
-import MiniChart from "@ui/charts/MiniChart.jsx";
+import RechartsAnalytics from "@ui/charts/RechartsAnalytics.jsx";
 import { postSearchForce } from "@services/api.js";
-import { formatResultTitle, extractYear } from "@lib/titleHelpers.js";
+import { formatResultTitle, extractYear, extractPlatform } from "@lib/titleHelpers.js";
 import { LuInfo } from "react-icons/lu";
 import {
   MdOutlineTimeline,
@@ -18,6 +18,12 @@ import {
   getAllMemberships,
   createCollection,
   createList,
+  getOrCreateDefaultCollection,
+  getOrCreateDefaultList,
+  getCollectionById,
+  getOrCreateAutoCollection,
+  createUnnamedCollection,
+  getListById,
 } from "@services/collections.js";
 
 // Chart rendering moved to `MiniChart.jsx` to keep ResultCard focused on layout.
@@ -27,6 +33,7 @@ export default function ResultCard({
   isActive = false,
   hideChart = false,
   onAnalyticsClick = null,
+  dataKey = undefined,
 }) {
   const [itemState, setItemState] = useState(item || null);
   // keep local state in sync when parent `item` prop changes
@@ -52,11 +59,8 @@ export default function ResultCard({
       import.meta.env &&
       import.meta.env.DEV);
 
-  // Keep recent cards closed by default. Only open chart when item isActive
-  const [showChart, setShowChart] = useState(Boolean(isActive));
-  useEffect(() => {
-    if (isActive) setShowChart(true);
-  }, [isActive]);
+  // Keep cards collapsed by default; user can expand to view chart
+  const [showChart, setShowChart] = useState(false);
   const INFO_AUTO_HIDE_MS = 3000;
 
   async function handleRefresh() {
@@ -80,6 +84,8 @@ export default function ResultCard({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerColId, setPickerColId] = useState("");
   const [pickerListId, setPickerListId] = useState("");
+  const [pendingCollectionTitle, setPendingCollectionTitle] = useState("");
+  const [pendingListTitle, setPendingListTitle] = useState("");
   const pickerRef = useRef(null);
   const addIconRef = useRef(null);
   const [popoverPos, setPopoverPos] = useState({ left: 0, top: 0 });
@@ -153,28 +159,68 @@ export default function ResultCard({
         setPopoverPos({ left: rect.right + 8, top: rect.top - 4 });
       }
     } catch (e) {}
+    // Open without auto-selecting so placeholders show until user picks
     setPickerOpen((o) => !o);
-    const cols = getCollections();
-    if (cols.length && !pickerColId) {
-      setPickerColId(cols[0].id);
-      const firstList = (cols[0].lists || [])[0];
-      setPickerListId(firstList ? firstList.id : "");
-    }
+    // reset transient pending state on open
+    setPendingCollectionTitle("");
+    setPendingListTitle("");
+    setPickerColId("");
+    setPickerListId("");
   }
 
   function handleAddToList(e) {
     try {
       e && e.stopPropagation && e.stopPropagation();
     } catch (e) {}
-    if (!pickerColId || !pickerListId) {
+  let colId = pickerColId;
+  let listId = pickerListId === "__pending_list__" ? "" : pickerListId;
+    // Only commit creations on Add to avoid orphaned collections/lists
+    if (!colId || colId === "__pending_collection__") {
+      // If user queued a collection name, create it now; otherwise use default "My Collection"
+      if (pendingCollectionTitle) {
+        const createdCol = createCollection({ title: pendingCollectionTitle });
+        colId = createdCol && createdCol.id;
+      } else {
+        const autoCol = getOrCreateAutoCollection();
+        colId = autoCol && autoCol.id;
+      }
+      // Keep placeholders; don't setPickerColId here
+    }
+    if (colId && !listId) {
+      if (pendingListTitle) {
+        const created = createList(colId, { title: pendingListTitle || 'General' });
+        listId = created && created.id;
+      } else {
+        const defList = getOrCreateDefaultList(colId);
+        listId = defList && defList.id;
+      }
+      // Do not setPickerListId here to keep UI consistent pre-commit
+    }
+    if (!colId || !listId) {
       setToast("Pick a collection and list");
       setTimeout(() => setToast(null), 1200);
       return;
     }
-    const ok = addItemToList(itemState, pickerColId, pickerListId);
+    const ok = addItemToList(itemState, colId, listId);
     if (ok) {
+      try {
+        const col = getCollectionById(colId);
+        const list = getListById(colId, listId);
+        const msg = `Added to ${col && col.title ? col.title : "Collection"} › ${list && list.title ? list.title : "List"}`;
+        window.dispatchEvent(new CustomEvent('dr_toast', { detail: { message: msg, variant: 'info', duration: 2000 } }));
+        // also notify listeners so pages like Collections can dismiss inline search results
+        try {
+          window.dispatchEvent(new CustomEvent('dr_item_added', { detail: { collectionId: colId, listId } }));
+        } catch (e) {}
+      } catch (e) {}
       setToast("Added");
+      // Clear any pending state after a successful commit
+      setPendingCollectionTitle("");
+      setPendingListTitle("");
+      setPickerColId("");
+      setPickerListId("");
       setPickerOpen(false);
+      // Do not navigate; user stays on current page and sees top-right toast
     } else {
       setToast("Failed");
     }
@@ -236,7 +282,7 @@ export default function ResultCard({
   if (!itemState) return null;
 
   return (
-    <div className="dr-resultcard-wrap">
+    <div className="dr-resultcard-wrap" data-dr-key={dataKey || undefined}>
       <div className="dr-resultcard">
         <img
           src={item.thumbnail || "/vite.svg"}
@@ -259,14 +305,25 @@ export default function ResultCard({
           >
             {/* value-only badges: [Nintendo Switch] [2021] */}
             {(() => {
-              const platformVal = (itemState && itemState.platform) || "";
+              const platformVal =
+                (itemState && itemState.platform) ||
+                extractPlatform(
+                  (itemState && itemState.soldListings) || [],
+                  (itemState && (itemState.title || itemState.query)) || ""
+                ) || "";
+              const yearFromSold = extractYear(
+                (itemState && itemState.soldListings) || [],
+                (itemState && (itemState.title || itemState.query)) || ""
+              );
+              // Fallback: also scan soldListingsRaw sample for a 4-digit year
+              const yearFromRaw = extractYear(
+                (itemState && itemState.soldListingsRaw) || [],
+                (itemState && (itemState.title || itemState.query)) || ""
+              );
               const yearVal =
-                (itemState &&
-                  (itemState.releaseYear ||
-                    extractYear(
-                      itemState.soldListings || [],
-                      itemState.title || ""
-                    ))) ||
+                (itemState && itemState.releaseYear) ||
+                yearFromSold ||
+                yearFromRaw ||
                 "";
               const vals = [platformVal, yearVal].filter(Boolean);
               return vals.map((v, i) => (
@@ -365,7 +422,8 @@ export default function ResultCard({
                 </button>
                 <button
                   className="dr-chart-toggle"
-                  aria-label="Toggle trend chart"
+                  aria-label={hideChart ? "See Analytics" : "Toggle trend chart"}
+                  title={hideChart ? "See Analytics" : "Show trend"}
                   aria-expanded={showChart}
                   aria-controls={`chart-${(
                     itemState.query ||
@@ -381,7 +439,6 @@ export default function ResultCard({
                       setShowChart((s) => !s);
                     }
                   }}
-                  title="Show trend"
                 >
                   <MdOutlineTimeline size={18} />
                 </button>
@@ -406,6 +463,12 @@ export default function ResultCard({
                 zIndex: 10000,
                 left: popoverPos.left,
                 top: popoverPos.top,
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddToList(e);
+                }
               }}
               onClick={(e) => {
                 try {
@@ -442,8 +505,9 @@ export default function ResultCard({
                         e.preventDefault();
                         const title = prompt("New collection name");
                         if (title) {
-                          const col = createCollection({ title });
-                          setPickerColId(col.id);
+                          // Defer creation until Add; show pending in selector
+                          setPendingCollectionTitle(title);
+                          setPickerColId("__pending_collection__");
                           setPickerListId("");
                         }
                       }}
@@ -455,18 +519,25 @@ export default function ResultCard({
                       title="New list"
                       onClick={(e) => {
                         e.preventDefault();
-                        const cols = getCollections();
-                        const sel = cols.find((c) => c.id === pickerColId);
-                        if (!sel) {
-                          setToast("Pick a collection");
-                          setTimeout(() => setToast(null), 1100);
+                        let colId = pickerColId;
+                        // If a pending collection is selected, defer list creation until Add
+                        if (colId === "__pending_collection__") {
+                          const name = prompt("New list name") || "General";
+                          setPendingListTitle(name);
+                          setPickerListId("__pending_list__");
                           return;
                         }
-                        const name = prompt("New list name");
-                        if (name) {
-                          const list = createList(pickerColId, { title: name });
-                          if (list) setPickerListId(list.id);
+                        if (!colId) {
+                          // User is explicitly creating a list without choosing a collection.
+                          // Create a fresh Unnamed collection to avoid attaching to an arbitrary existing one.
+                          const unnamed = createUnnamedCollection('Unnamed');
+                          colId = unnamed && unnamed.id;
+                          setPickerColId(colId || "");
                         }
+                        if (!colId) return; // safety
+                        const name = prompt("New list name") || "General";
+                        const list = createList(colId, { title: name });
+                        if (list) setPickerListId(list.id);
                       }}
                     >
                       <MdAdd size={16} />
@@ -478,42 +549,119 @@ export default function ResultCard({
                   value={pickerColId}
                   onChange={(e) => {
                     const id = e.target.value;
+                    if (id === "__new_collection__") {
+                      const title = prompt("New collection name");
+                      if (title) {
+                        // Defer creation until Add; show pending as selected
+                        setPendingCollectionTitle(title);
+                        setPickerColId("__pending_collection__");
+                        setPickerListId("");
+                      } else {
+                        // reset to placeholder if user cancels
+                        setPickerColId("");
+                      }
+                      return;
+                    }
                     setPickerColId(id);
-                    const sel = (getCollections() || []).find(
-                      (c) => c.id === id
-                    );
-                    setPickerListId(
-                      (sel && sel.lists && sel.lists[0] && sel.lists[0].id) ||
-                        ""
-                    );
+                    // Do not auto-select the first list; keep placeholder until user picks
+                    setPickerListId("");
                   }}
                 >
+                  <option value="" disabled>
+                    Select Collection
+                  </option>
                   {(getCollections() || []).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.title}
+                      {c.title} {(c.lists && Array.isArray(c.lists)) ? `(${c.lists.reduce((n,l)=>n + ((l.itemIds||[]).length||0),0)})` : ''}
                     </option>
                   ))}
+                  {pendingCollectionTitle && pickerColId === "__pending_collection__" ? (
+                    <option value="__pending_collection__">
+                      {pendingCollectionTitle}
+                    </option>
+                  ) : null}
+                  <option value="__new_collection__">+ New collection…</option>
                 </select>
                 <select
                   className="w-full rounded border border-border px-2 py-1 text-sm mb-2 bg-white dark:bg-neutral-900 text-foreground appearance-none"
                   value={pickerListId}
-                  onChange={(e) => setPickerListId(e.target.value)}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id === "__new_list__") {
+                      // If no collection selected, capture pending list name and defer creation until Add
+                      const name = prompt("New list name") || "General";
+                      if (!pickerColId || pickerColId === "__pending_collection__") {
+                        setPendingListTitle(name);
+                        setPickerListId("__pending_list__");
+                        return;
+                      }
+                      // If a collection is selected, create immediately
+                      const list = createList(pickerColId, { title: name });
+                      if (list) setPickerListId(list.id);
+                      return;
+                    }
+                    setPickerListId(id);
+                  }}
                 >
+                  <option value="" disabled>
+                    Select List
+                  </option>
                   {(() => {
-                    const sel = (getCollections() || []).find(
-                      (c) => c.id === pickerColId
-                    );
+                    const sel = getCollectionById(pickerColId);
                     return ((sel && sel.lists) || []).map((l) => (
                       <option key={l.id} value={l.id}>
-                        {l.title}
+                        {l.title} {(l.itemIds && l.itemIds.length) ? `(${l.itemIds.length})` : ''}
                       </option>
                     ));
                   })()}
+                  {!pickerColId && pendingListTitle ? (
+                    <option value="__pending_list__">
+                      {pendingListTitle}
+                    </option>
+                  ) : null}
+                  <option value="__new_list__">+ New list…</option>
                 </select>
+                {(() => {
+                  const sel = getCollectionById(pickerColId);
+                  const hasPendingCol = !sel && pickerColId === "__pending_collection__" && !!pendingCollectionTitle;
+                  // Initial state: no messaging
+                  if (!pickerColId && !pendingListTitle && !pendingCollectionTitle) return null;
+                  // User entered a pending list but not a collection yet
+                  if (!pickerColId && pendingListTitle) {
+                    return (
+                      <div className="text-xs text-muted-dynamic mt-1">
+                        Select a collection, or press Add to create a default collection
+                      </div>
+                    );
+                  }
+                  // User entered a pending collection but not a list yet
+                  if (hasPendingCol && (!pickerListId || pickerListId === "")) {
+                    return (
+                      <div className="text-xs text-muted-dynamic mt-1">
+                        Select a list, or press Add to create a default list
+                      </div>
+                    );
+                  }
+                  // Real collection selected with zero lists
+                  if (sel && (!sel.lists || sel.lists.length === 0) && (!pickerListId || pickerListId === "")) {
+                    return (
+                      <div className="text-xs text-muted-dynamic mt-1">
+                        Select a list, or press Add to create a default list
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="flex items-center justify-end gap-2">
                   <button
                     className="rounded border px-2 py-1 text-sm"
-                    onClick={() => setPickerOpen(false)}
+                    onClick={() => {
+                      setPendingCollectionTitle("");
+                      setPendingListTitle("");
+                      setPickerColId("");
+                      setPickerListId("");
+                      setPickerOpen(false);
+                    }}
                   >
                     Cancel
                   </button>
@@ -538,11 +686,12 @@ export default function ResultCard({
           "-"
         )}`}
       >
-        <MiniChart
-          series={itemState.timeSeries || { avg: [], min: [], max: [] }}
-          width={380}
-          height={84}
-        />
+        {showChart && (
+          <RechartsAnalytics
+            series={itemState.timeSeries || { avg: [], min: [], max: [] }}
+            height={260}
+          />
+        )}
       </div>
       {/* omitted info and notes */}
       {omitHelp && <div className="dr-omit-inline">{omitHelp}</div>}

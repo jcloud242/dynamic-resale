@@ -7,6 +7,8 @@ import History from "./pages/History";
 import Analytics from "./pages/Analytics";
 import Collections from "./pages/Collections";
 import { usePageState } from "./lib/usePageState";
+import GlobalToast from "./shared/ui/GlobalToast";
+import { postSearch } from "@services/api.js";
 
 function App() {
   const { active, setActive } = usePageState();
@@ -26,25 +28,41 @@ function App() {
     }
   }, [active]);
 
-  const handleNavigateToAnalytics = (it) => {
-    setAnalyticsItem(it);
+  const handleNavigateToAnalytics = async (it) => {
+    // Derive a query and try to hydrate a full search result before navigating
+    let hydrated = it;
     try {
-      localStorage.setItem("dr_last_analytics_item", JSON.stringify(it));
-  } catch {}
+      const q = (it && (it.query || it.title || it.upc)) || null;
+      if (q) {
+        const res = await postSearch({ query: q, opts: { suppressCachedBadge: true } });
+        if (res) hydrated = res;
+      }
+    } catch (e) { /* fallback to provided item */ }
+    setAnalyticsItem(hydrated);
+    try {
+      localStorage.setItem("dr_last_analytics_item", JSON.stringify(hydrated));
+      window.dispatchEvent(new CustomEvent('dr_last_analytics_item_changed'));
+    } catch {}
     setActive("analytics");
   };
   return (
     <div className="App">
+      <GlobalToast />
       <Header />
       {/* Render pages conditionally so header + nav stay persistent */}
-      {active === "home" && <Home onSearchComplete={() => setActive("home")} />}
+      {active === "home" && (
+        <Home
+          onSearchComplete={() => setActive("home")}
+          onNavigateToAnalytics={handleNavigateToAnalytics}
+        />
+      )}
       {active === "history" && (
         <History onNavigateToAnalytics={handleNavigateToAnalytics} />
       )}
       {active === "analytics" && (
         <Analytics item={analyticsItem} onBack={() => setActive("history")} />
       )}
-      {active === "collections" && <Collections />}
+  {active === "collections" && <Collections onNavigateToAnalytics={handleNavigateToAnalytics} />}
       <BottomNav active={active} onNavigate={(id) => setActive(id)} />
     </div>
   );

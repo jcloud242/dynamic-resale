@@ -204,3 +204,42 @@ export function getAllMemberships(itemOrKey) {
   }
   return res;
 }
+
+// Convenience helpers to smooth UX flows
+export function getCollectionById(collectionId) {
+  return (getCollections() || []).find((c) => c.id === collectionId) || null;
+}
+
+export function getListById(collectionId, listId) {
+  const col = getCollectionById(collectionId);
+  if (!col) return null;
+  return (col.lists || []).find((l) => l.id === listId) || null;
+}
+
+export function getOrCreateDefaultCollection() {
+  const all = getCollections();
+  if (all && all.length) return all[0];
+  return createCollection({ title: 'My Collection' });
+}
+
+export function getOrCreateDefaultList(collectionId) {
+  const col = getCollectionById(collectionId);
+  if (!col) return null;
+  if (Array.isArray(col.lists) && col.lists.length) return col.lists[0];
+  return createList(col.id, { title: 'General' });
+}
+
+// Prefer this when auto-creating on "Add" with no user selection
+export function getOrCreateAutoCollection() {
+  const all = getCollections();
+  const existing = (all || []).find(c => c && c.title === 'My Collection');
+  if (existing) return existing;
+  // Do not add tags by default
+  return createCollection({ title: 'My Collection' });
+}
+
+// Prefer this when user creates a list without selecting a collection (fresh unnamed bucket)
+export function createUnnamedCollection(title = 'My Collection') {
+  // Keep consistent default naming and avoid adding tags by default
+  return createCollection({ title });
+}

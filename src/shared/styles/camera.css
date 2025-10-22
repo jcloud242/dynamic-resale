@@ -137,6 +137,20 @@
   border-radius: 10px;
   object-fit: cover;
 }
+
+/* Mode-specific viewport aspect ratios */
+.dr-camera-video-wrap.mode-barcode .dr-camera-video {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.dr-camera-video-wrap.mode-photo .dr-camera-video {
+  height: auto;
+  aspect-ratio: 3 / 4; /* taller, more phone-like */
+}
+.dr-camera-video-wrap.mode-image .dr-camera-video {
+  height: auto;
+  aspect-ratio: 4 / 5;
+}
 .dr-camera-instructions {
   font-size: 13px;
   color: #9aa7b2;
@@ -400,3 +414,14 @@
   bottom: 8px;
   height: 6px;
 }
+
+/* Photo mode: use a taller viewport and tighter frame closer to a phone photo AR */
+.dr-camera-video-wrap.mode-photo {
+  --frame-w: 82%;
+  --frame-h: 66%;
+}
+.dr-camera-video-wrap.mode-photo .dr-frame-inner {
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+}
+
+/* Image mode: similar to photo but slightly smaller frame to suggest preview/analysis */

@@ -14,6 +14,21 @@ console.log('ENV load:', {
 
   // Normalize platform short labels to friendly names
   const PLATFORM_MAP = {
+    // Nintendo families
+    'nes': 'NES',
+    'nintendo entertainment system': 'NES',
+    'snes': 'SNES',
+    'super nintendo': 'SNES',
+    'n64': 'Nintendo 64',
+    'nintendo 64': 'Nintendo 64',
+    'gamecube': 'GameCube',
+    'gc': 'GameCube',
+    'game boy': 'Game Boy',
+    'gb': 'Game Boy',
+    'game boy color': 'Game Boy Color',
+    'gbc': 'Game Boy Color',
+    'game boy advance': 'Game Boy Advance',
+    'gba': 'Game Boy Advance',
     '3ds': 'Nintendo 3DS',
     'nintendo 3ds': 'Nintendo 3DS',
     'ds': 'Nintendo DS',
@@ -21,12 +36,27 @@ console.log('ENV load:', {
     'wii': 'Nintendo Wii',
     'wii u': 'Nintendo Wii U',
     'switch': 'Nintendo Switch',
+    // PlayStation families
+    'ps1': 'PlayStation',
+    'playstation': 'PlayStation',
+    'ps2': 'PlayStation 2',
     'ps4': 'PlayStation 4',
     'ps5': 'PlayStation 5',
     'ps3': 'PlayStation 3',
+    'psp': 'PSP',
+    'ps vita': 'PS Vita',
+    'vita': 'PS Vita',
+    // Xbox families
     'xbox one': 'Xbox One',
     'xbox series x': 'Xbox Series X',
     'xbox 360': 'Xbox 360',
+    // Sega
+    'sega genesis': 'Sega Genesis',
+    'genesis': 'Sega Genesis',
+    'mega drive': 'Sega Genesis',
+    'sega saturn': 'Sega Saturn',
+    'saturn': 'Sega Saturn',
+    'dreamcast': 'Dreamcast',
     'pc': 'PC',
     'mac': 'Mac'
   };
@@ -170,7 +200,10 @@ async function getCache(key) {
 }
 
 // Seed suggestions on startup if cache empty
+// optional dev seeding (enable via SEED_SUGGESTIONS=1 or when not in production)
 (async function seedSuggestions() {
+  const allowSeed = process.env.SEED_SUGGESTIONS === '1' || process.env.NODE_ENV !== 'production';
+  if (!allowSeed) return;
   try {
     const existing = await getCache('dr_recent');
     if (!existing || !Array.isArray(existing) || existing.length === 0) {
@@ -227,11 +260,45 @@ function cleanListingTitleForName(t) {
   return s;
 }
 
+// Detect low-quality/generic listing titles that shouldn't influence naming or display
+function isGenericListingTitle(title) {
+  if (!title) return false;
+  const t = String(title).toLowerCase();
+  const genericTokens = [
+    'pick your game',
+    'pick your title',
+    'choose your',
+    'random',
+    'assorted',
+    'variety',
+    'bundle',
+    'bulk',
+    'wholesale',
+    'job lot',
+    'lot of',
+    'replacement case',
+    'cover art only',
+    'art only',
+    'reproduction',
+    'repro',
+  ];
+  for (const tok of genericTokens) if (t.includes(tok)) return true;
+  return false;
+}
+
 function detectPlatformFromListings(listings = [], preferredNames = []) {
   // Infer platform by majority vote across listing titles (more robust than first-match)
   if (!Array.isArray(listings)) return null;
   // ordered map of regex -> normalized platform label
   const platformPatterns = [
+    // retro Nintendo
+    { re: /\b(nintendo\s+entertainment\s+system|nes)\b/i, label: 'NES' },
+    { re: /\b(super\s+nintendo|snes)\b/i, label: 'SNES' },
+    { re: /\b(nintendo\s*64|n64)\b/i, label: 'Nintendo 64' },
+    { re: /\b(game\s*cube|gamecube|gc)\b/i, label: 'GameCube' },
+    { re: /\b(game\s*boy\s*advance|gba)\b/i, label: 'Game Boy Advance' },
+    { re: /\b(game\s*boy\s*color|gbc)\b/i, label: 'Game Boy Color' },
+    { re: /\b(game\s*boy|\bgb\b)\b/i, label: 'Game Boy' },
     // match handheld/legacy consoles first (more specific)
     { re: /\b(nintendo\s+3ds|3ds|nintendo\s+ds|ds)\b/i, label: '3DS' },
     { re: /\b(wii\s*u|wiiu)\b/i, label: 'Wii U' },
@@ -239,10 +306,22 @@ function detectPlatformFromListings(listings = [], preferredNames = []) {
     // modern consoles
     { re: /\b(ps5|playstation\s*5|playstation5)\b/i, label: 'PS5' },
     { re: /\b(ps4|playstation\s*4|playstation4)\b/i, label: 'PS4' },
+    { re: /\b(ps3|playstation\s*3|playstation3)\b/i, label: 'PlayStation 3' },
+    { re: /\b(ps2|playstation\s*2|playstation2)\b/i, label: 'PlayStation 2' },
+    { re: /\b(ps1|playstation\s*1|playstation)\b/i, label: 'PlayStation' },
     { re: /\b(xbox\s*series\s*x|xbox\s*seriesx)\b/i, label: 'Xbox Series X' },
     { re: /\b(xbox\s*one)\b/i, label: 'Xbox One' },
+    { re: /\b(xbox\s*360)\b/i, label: 'Xbox 360' },
     // Nintendo Switch: match explicit 'switch' or 'nintendo switch' but avoid bare 'nintendo'
     { re: /\b(nintendo\s+switch|switch)\b/i, label: 'Nintendo Switch' },
+    // Sony handhelds
+    { re: /\b(psp)\b/i, label: 'PSP' },
+    { re: /\b(ps\s*vita|vita)\b/i, label: 'PS Vita' },
+    // Sega
+    { re: /\b(sega\s*genesis|mega\s*drive)\b/i, label: 'Sega Genesis' },
+    { re: /\b(sega\s*saturn|saturn)\b/i, label: 'Sega Saturn' },
+    { re: /\b(dreamcast)\b/i, label: 'Dreamcast' },
+    // PC
     { re: /\b(pc|steam)\b/i, label: 'PC' },
   ];
 
@@ -317,23 +396,87 @@ function isGradedListing(l) {
   return false;
 }
 
+// Identify CIB/boxed/manual-only variants we want to exclude from loose price stats
+function isCibOrBoxedListing(l) {
+  if (!l || !l.title) return false;
+  const t = String(l.title).toLowerCase();
+  // Core CIB patterns
+  const cibTokens = [
+    'cib',
+    'complete in box',
+    'complete-in-box',
+    'complete with manual',
+    'complete w/',
+    'complete w /',
+    'complete set',
+    'with box',
+    'w/ box',
+    'w / box',
+    'boxed',
+    'big box',
+    'manual only',
+    'box only',
+  ];
+  for (const tok of cibTokens) if (t.includes(tok)) return true;
+  // Heuristic: titles explicitly advertising both box and manual are likely CIB
+  if (t.includes('box') && t.includes('manual')) return true;
+  return false;
+}
+
+// Identify true CIB (complete-in-box) listings (but not manual-only or box-only)
+function isTrueCibListing(l) {
+  if (!l || !l.title) return false;
+  const t = String(l.title).toLowerCase();
+  // Exclude manual-only/box-only explicitly
+  if (t.includes('manual only') || t.includes('box only')) return false;
+  // Positive CIB signals
+  if (t.includes('cib')) return true;
+  if (t.includes('complete in box') || t.includes('complete-in-box')) return true;
+  if (t.includes('complete with manual')) return true;
+  // Heuristic: contains both box and manual
+  if (t.includes('box') && t.includes('manual')) return true;
+  // 'complete' along with box or manual strongly suggests CIB
+  if (t.includes('complete') && (t.includes('box') || t.includes('manual'))) return true;
+  return false;
+}
+
+// Detect if the user's query explicitly requests CIB
+function isCibQueryHint(q) {
+  if (!q) return false;
+  const s = String(q).toLowerCase();
+  if (s.includes(' cib')) return true; // includes token with space
+  if (s.endsWith('cib')) return true;
+  if (s.includes('complete in box') || s.includes('complete-in-box')) return true;
+  if (s.includes('with box') && s.includes('manual')) return true;
+  return false;
+}
+
 function chooseBestGameName(listings = [], detailsExtract = {}) {
   // prefer explicit detailsExtract.gameName when present
   if (detailsExtract && detailsExtract.gameName) return detailsExtract.gameName;
-  // scan listings for short, focused titles
-  const candidates = [];
+  // collect cleaned title candidates
+  const counts = Object.create(null);
+  const order = [];
   for (const l of (listings || [])) {
     if (!l || !l.title) continue;
+    // ignore generic or multi-title listings (lots, bundles, pick-your-game)
+    if (isGenericListingTitle(l.title)) continue;
     const cleaned = cleanListingTitleForName(l.title);
-    if (!cleaned) continue;
-    // ignore ones that are just UPC-like or too generic
-    if (cleaned.length < 3) continue;
-    candidates.push(cleaned);
+    if (!cleaned || cleaned.length < 3) continue;
+    // ignore cleaned titles that still read as generic
+    if (isGenericListingTitle(cleaned)) continue;
+    if (!(cleaned in counts)) order.push(cleaned);
+    counts[cleaned] = (counts[cleaned] || 0) + 1;
   }
-  if (!candidates.length) return null;
-  // choose the shortest non-trivial cleaned title (removes long marketing strings)
-  candidates.sort((a,b) => a.length - b.length);
-  return candidates[0];
+  if (order.length === 0) return null;
+  // choose the most frequent cleaned title; tie-break by shorter length
+  let best = order[0];
+  for (const c of order) {
+    const cb = counts[c] > counts[best];
+    const tie = counts[c] === counts[best] && c.length < best.length;
+    if (cb || tie) best = c;
+  }
+  return best;
 }
 
 function filterOutlierPrices(prices = []) {
@@ -538,6 +681,16 @@ app.post('/api/search', async (req, res) => {
   const cleaned = cleanQuery(rawNorm) || rawNorm;
   // normalizedQuery used by downstream ranking/labeling — prefer cleaned form
   const normalizedQuery = cleaned || rawNorm;
+  // derive a variant without condition/packaging tokens (e.g., CIB) for title scoring
+  const normalizedQueryForTitle = (() => {
+    try {
+      let s = String(normalizedQuery).toLowerCase();
+      s = s.replace(/\bcib\b/g, '');
+      s = s.replace(/complete in box|complete-in-box|with box|w\/?\s*box|manual only/gi, ' ');
+      s = s.replace(/\s+/g, ' ').trim();
+      return s;
+    } catch (e) { return normalizedQuery; }
+  })();
   const queryIsUpc = isLikelyUpc(query) || isLikelyUpc(normalizedQuery);
       let ebayQ = '';
       if (queryIsUpc) {
@@ -744,20 +897,15 @@ app.post('/api/search', async (req, res) => {
               }
             } catch (e) {}
           }
-          // a final deep scan: stringify details and look for the first plausible year
-          if (!out.releaseYear) {
-            try {
-              const s = JSON.stringify(details);
-              out.releaseYear = findYearInString(s) || null;
-            } catch (e) {}
-          }
+          // Avoid overly broad fallback that can pick irrelevant timestamps (e.g., 2025)
+          // If no releaseYear found by now, leave it null and let listing-title heuristics infer it later.
         } catch (e) {}
         return out;
       }
 
       // Enrich top browse items with item details (upc, aspects) — parallelized with limited concurrency
       try {
-        const enrichCount = Math.min(12, browseItems.length);
+        const enrichCount = Math.min(20, browseItems.length);
         const concurrency = 4;
         if (enrichCount > 0 && token) {
     const queue = [];
@@ -770,11 +918,18 @@ app.post('/api/search', async (req, res) => {
               try {
                 const details = await fetchItemDetails(it.id, token);
                 if (!details) return;
-                const all = extractAllFromDetails(details);
+                const all = extractAllFromDetails(details) || {};
+                const ex2 = extractFromDetails(details) || {};
+                const gameName = ex2.gameName || all.gameName || null;
                 if (all.upc) it.upc = all.upc;
-                if (all.gameName && !it.cleanedTitle) it.cleanedTitle = all.gameName;
-                if (all.platform && !it.platform) it.platform = normalizePlatformLabel(all.platform) || all.platform;
-                if (all.releaseYear && !it.releaseYear) it.releaseYear = all.releaseYear;
+                if (gameName) {
+                  it.gameName = gameName;
+                  if (!it.cleanedTitle) it.cleanedTitle = gameName;
+                }
+                const platformVal = ex2.platform || all.platform || null;
+                if (platformVal && !it.platform) it.platform = normalizePlatformLabel(platformVal) || platformVal;
+                const yearVal = ex2.releaseYear || all.releaseYear || null;
+                if (yearVal && !it.releaseYear) it.releaseYear = yearVal;
                 it._details = details;
               } catch (e) {}
             });
@@ -793,6 +948,24 @@ app.post('/api/search', async (req, res) => {
         }
       } catch (e) { /* ignore enrichment errors */ }
 
+  // Aggregate authoritative gameName from enriched browse items (mode)
+  try {
+    const nameCounts = Object.create(null);
+    for (const it of (browseItems || [])) {
+      const n = (it && it.gameName) ? String(it.gameName).trim() : null;
+      if (!n || isGenericListingTitle(n)) continue;
+      nameCounts[n] = (nameCounts[n] || 0) + 1;
+    }
+    let aggName = null; let aggCount = 0;
+    for (const k of Object.keys(nameCounts)) {
+      if (nameCounts[k] > aggCount) { aggName = k; aggCount = nameCounts[k]; }
+      else if (nameCounts[k] === aggCount && aggName && k.length < aggName.length) { aggName = k; }
+    }
+    if (aggName && (!detailsExtract || !detailsExtract.gameName)) {
+      detailsExtract = Object.assign({}, detailsExtract || {}, { gameName: aggName });
+    }
+  } catch (e) { /* ignore aggregation errors */ }
+
   // choose price source: prefer completedListings (Finding API) if present; otherwise use browseItems
   const priceSource = (completedListings && completedListings.length) ? completedListings : browseItems;
   // keep raw copy for transparency (may be refreshed after fetching details)
@@ -800,7 +973,7 @@ app.post('/api/search', async (req, res) => {
 
       // Re-rank browseItems by simple token overlap with the user's query to boost relevance
   try {
-    const qTokens = tokenize(normalizedQuery || query);
+  const qTokens = tokenize(normalizedQueryForTitle || normalizedQuery || query);
     if (qTokens.length && Array.isArray(browseItems) && browseItems.length) {
       for (const it of browseItems) {
         const title = (it.title || '') + ' ' + (it.subtitle || '');
@@ -809,8 +982,10 @@ app.post('/api/search', async (req, res) => {
         for (const qt of qTokens) if (tTokens.includes(qt)) overlap += 1;
         // score is fraction of query tokens matched (0..1) with small boost for exact title inclusion
         const frac = overlap / Math.max(qTokens.length, 1);
-        const exactBoost = String(it.title || '').toLowerCase().includes((normalizedQuery || '').toLowerCase()) ? 0.12 : 0;
+        const exactBoost = String(it.title || '').toLowerCase().includes((normalizedQueryForTitle || normalizedQuery || '').toLowerCase()) ? 0.12 : 0;
         it.matchScore = Math.min(1, frac + exactBoost);
+        // penalty for generic/lot or pick-your-game listings
+        if (isGenericListingTitle(it.title)) it.matchScore -= 0.25;
       }
       // If client indicated the suggestion came from eBay, try to promote an exact cleaned title match
       try {
@@ -836,9 +1011,10 @@ app.post('/api/search', async (req, res) => {
   } catch (e) {
     console.warn('[search] re-rank failed', e && e.message);
   }
-  // filter graded/collector listings from the price aggregation and returned soldListings
-  const nonGraded = soldListingsRaw.filter((it) => !isGradedListing(it));
-  console.log('[search] priceSource length=', priceSource && priceSource.length, 'nonGraded=', nonGraded.length);
+  // filter listings for price aggregation based on intent (default loose; CIB when explicitly requested)
+  const preferCib = isCibQueryHint(query) || (opts && isCibQueryHint(opts.originalInput));
+  const nonGraded = soldListingsRaw.filter((it) => !isGradedListing(it) && (preferCib ? isTrueCibListing(it) : !isCibOrBoxedListing(it)));
+  console.log('[search] priceSource length=', priceSource && priceSource.length, 'preferCib=', !!preferCib, 'filteredCount=', nonGraded.length);
 
   // Aim to base prices on up to `desiredCount` non-graded sold listings. If we don't
   // have enough non-graded results, attempt to fetch additional completed items
@@ -1077,7 +1253,8 @@ app.post('/api/search', async (req, res) => {
         return Number(n.toFixed(2));
       };
   // ensure we have a concise gameName
-  const candidateGameName = chooseBestGameName(priceSource, detailsExtract);
+  // Prefer enriched browse items for name inference because they carry per-item gameName
+  const candidateGameName = chooseBestGameName((browseItems && browseItems.length ? browseItems : priceSource), detailsExtract);
   // prefer explicit extraction from top item details, otherwise majority-vote inference
   // pass preferred names so listings whose cleaned titles match the chosen game name are weighted
   const preferredNames = [];
@@ -1089,6 +1266,27 @@ app.post('/api/search', async (req, res) => {
   // normalize platform label for client display
   const normalizedPlatform = normalizePlatformLabel(inferredPlatform) || inferredPlatform || null;
 
+  // Fallback: infer a plausible release year from listing titles if details extraction failed
+  let inferredYear = detailsExtract.releaseYear || null;
+  if (!inferredYear) {
+    try {
+      const yearCounts = Object.create(null);
+      const yearRe = /\b(19|20)\d{2}\b/g;
+      for (const it of (soldListingsRaw || [])) {
+        const m = String(it && it.title || '').match(yearRe);
+        if (!m) continue;
+        for (const y of m) {
+          const yn = Number(y);
+          const now = new Date().getFullYear() + 1;
+          if (yn >= 1970 && yn <= now) yearCounts[y] = (yearCounts[y] || 0) + 1;
+        }
+      }
+      let bestY = null; let bestC = 0;
+      for (const k of Object.keys(yearCounts)) { if (yearCounts[k] > bestC) { bestC = yearCounts[k]; bestY = k; } }
+      if (bestY) inferredYear = String(bestY);
+    } catch (e) { /* ignore */ }
+  }
+
   // compute counts for transparency
   const rawCount = soldListingsRaw.length;
   const filteredCount = rawCount - filteredSource.length;
@@ -1097,18 +1295,119 @@ app.post('/api/search', async (req, res) => {
   const nPriceOutliers = Math.max(0, filteredSource.length - prices.length);
   const filteredBreakdown = { graded: nGraded, priceOutliers: nPriceOutliers };
 
+  // Pick best display item by comparing cleaned titles to normalized query
+  let displayItem = null;
+  try {
+    const desired = cleanListingTitleForName(normalizedQuery) || normalizedQuery;
+    let bestScore = -1;
+    const tokens = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const qTok = tokens(desired);
+    const scoreTitle = (title) => {
+      const cleaned = cleanListingTitleForName(title || '') || '';
+      const t = tokens(cleaned);
+      if (!t.length || !qTok.length) return 0;
+      let overlap = 0;
+      for (const qt of qTok) if (t.includes(qt)) overlap += 1;
+      const frac = overlap / Math.max(qTok.length, 1);
+      const exact = cleaned && desired && cleaned.toLowerCase() === desired.toLowerCase() ? 0.6 : 0;
+      // penalty for excessive extra tokens beyond query size (keeps titles concise)
+      const lenPenalty = Math.max(0, (t.length - qTok.length) * 0.015);
+      return Math.max(0, Math.min(1.6, frac + exact - lenPenalty));
+    };
+    const scoreCompleteness = (it) => {
+      let s = 0;
+      if (it && it.price) s += 0.12;
+      if (it && it.thumbnail) s += 0.05;
+      if (it && it.platform) s += 0.12;
+      if (it && it.releaseYear) s += 0.08;
+      if (it && it.gameName) s += 0.14; // boost authoritative items
+      // small boost if cleaned title starts with desired
+      try {
+        const cleaned = cleanListingTitleForName(it && it.title || '') || '';
+        if (cleaned && desired && cleaned.toLowerCase().startsWith(desired.toLowerCase())) s += 0.08;
+      } catch (e) {}
+      return s;
+    };
+    // choose from a filtered candidate set:
+    // - if CIB intent: prefer CIB titles; else avoid generic "pick your game"/lot/bundle titles
+    let consider = browseItems.slice(0, 30);
+    if (preferCib) {
+      const cibOnly = consider.filter(it => isTrueCibListing(it));
+      if (cibOnly.length >= 3) consider = cibOnly;
+      else if (cibOnly.length > 0) consider = cibOnly.concat(consider.filter(it => !isGenericListingTitle(it.title)).slice(0, 10));
+    } else {
+      // Default mode: exclude generic titles AND CIB/boxed so rankedCandidates reflect loose-only listings
+      consider = consider
+        .filter(it => !isGenericListingTitle(it.title))
+        .filter(it => !isCibOrBoxedListing(it))
+        .slice(0, 20);
+    }
+    // compute scores for candidates and keep a sorted list
+    const scoredCandidates = [];
+    for (const it of consider) {
+      const st = scoreTitle(it && it.title);
+      const sc = scoreCompleteness(it);
+      const total = (0.72 * st) + (0.28 * sc);
+      scoredCandidates.push({ it, total });
+      if (total > bestScore) { bestScore = total; displayItem = it; }
+    }
+    scoredCandidates.sort((a,b) => (b.total || 0) - (a.total || 0));
+    // enforce a conservative floor; if nothing crosses ~0.35, fallback to existing top item
+    if (bestScore < 0.35) displayItem = null;
+    // persist top 5 candidates for analytics/debug
+    try {
+      res.locals._topCandidates = scoredCandidates.slice(0, 5).map(s => {
+        const it = s.it || {};
+        return {
+          id: it.id || null,
+          title: it.title || null,
+          gameName: it.gameName || null,
+          platform: it.platform || null,
+          price: (it.price && Number(it.price)) || (typeof it.price === 'number' ? it.price : null),
+          itemHref: it.itemHref || null,
+          thumbnail: it.thumbnail || null,
+          score: Number((s.total || 0).toFixed(4))
+        };
+      });
+    } catch (e) {}
+  } catch (e) { displayItem = null; }
+
+  const chosen = displayItem || (browseItems[0] || {});
+
+  // If possible, fetch details for the chosen item to improve gameName/platform/year
+  try {
+    if (chosen && chosen.id && token) {
+      try { if (req && req.trace) req.trace('chosen-detail-start'); } catch (e) {}
+      const chosenDetails = await (async () => {
+        try { return await (async function fetchItemDetails(itemId, token) { if (!itemId || !token) return null; try { const cacheKey = `item_details:${itemId}`; const cached = await getCache(cacheKey).catch(() => null); if (cached) return cached; const url = `https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(itemId)}`; const dr = await axiosGetWithRetry(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, 2, 200).catch(() => null); const data = dr && dr.data ? dr.data : null; if (data) { try { setCache(cacheKey, data, 1000 * 60 * 5).catch(() => {}); } catch (e) {} } return data; } catch (e) { return null; } })(chosen.id, token); } catch (e) { return null; } })();
+      try { if (req && req.trace) req.trace('chosen-detail-end'); } catch (e) {}
+      if (chosenDetails) {
+        const extra = extractAllFromDetails(chosenDetails) || {};
+        const extra2 = extractFromDetails(chosenDetails) || {};
+        // merge into detailsExtract to influence downstream title/platform inference
+        detailsExtract = Object.assign({}, detailsExtract || {}, extra2 || {}, extra || {});
+      }
+    }
+  } catch (e) { /* ignore chosen details failures */ }
+
+  // Recompute preferred name and platform with any enriched details
+  try { if (!detailsExtract.gameName) { const again = chooseBestGameName(priceSource, detailsExtract); if (again) { /* eslint-disable-next-line no-param-reassign */ /* not needed, just store below */ } } } catch (e) {}
+  const preferName = detailsExtract && detailsExtract.gameName ? detailsExtract.gameName : chooseBestGameName(priceSource, detailsExtract);
+  const isPreferNameGeneric = isGenericListingTitle(preferName || '');
+  const cleanedChosenTitle = cleanListingTitleForName(chosen && chosen.title || '');
   const out = {
     query,
-    title: (browseItems.length ? browseItems[0].title : query),
+    // prefer canonical name; if it's generic, fall back to the chosen cleaned title
+    title: (!isPreferNameGeneric && preferName) ? preferName : (cleanedChosenTitle || chosen.title || (browseItems.length ? browseItems[0].title : query)),
         categoryId: (data.categoryId || null),
-        thumbnail: (browseItems.length ? browseItems[0].thumbnail : '/vite.svg'),
+        thumbnail: chosen.thumbnail || (browseItems.length ? browseItems[0].thumbnail : '/vite.svg'),
         avgPrice: round(avgPrice),
         minPrice: round(minPrice),
         maxPrice: round(maxPrice),
         // include potential extracted specifics from the top item or inferred from listings
-  gameName: detailsExtract.gameName || candidateGameName || null,
+  gameName: preferName || candidateGameName || null,
   platform: normalizedPlatform,
-        releaseYear: detailsExtract.releaseYear || null,
+  releaseYear: inferredYear || null,
   // expose filtered soldListings (hide graded/collector items) for frontend parsing
   soldListings: filteredSource,
   // explicit sample size used for price aggregation and graded omitted count for UI copy
@@ -1122,6 +1421,17 @@ app.post('/api/search', async (req, res) => {
   filteredBreakdown,
         fetchedAt: new Date().toISOString(),
       };
+  try {
+    if (res.locals && Array.isArray(res.locals._topCandidates)) {
+      out.rankedCandidates = res.locals._topCandidates;
+    }
+  } catch (e) {}
+  // optional: include evidence of gameName extraction for the top items when requested
+  try {
+    if (req.body && req.body.debugName) {
+      out.gameNameEvidence = (browseItems || []).slice(0, 12).map(it => ({ id: it.id, title: it.title, gameName: it.gameName || null, platform: it.platform || null }));
+    }
+  } catch (e) { /* ignore */ }
   // cache for short TTL to speed up repeated scans; await to reduce race conditions
   // send response first (ensures client isn't blocked by cache writes)
   try {
@@ -1453,8 +1763,110 @@ app.get('/api/ebay-suggest', async (req, res) => {
     };
     try {
       const r = await axiosGetWithRetry(url, { params, headers }, 2, 200);
-      const items = (r && r.data && r.data.itemSummaries) || [];
-      const candidates = items.map(it => ({ label: (it.title || '').trim(), category: (it.categoryPath || (it.primaryCategory && it.primaryCategory.categoryName)) || null, source: 'ebay' }));
+      let items = (r && r.data && r.data.itemSummaries) || [];
+      // filter out graded/collector listings early to avoid WATA/PSA heavy titles in suggestions
+      try {
+        items = items.filter((it) => !isGradedListing({ title: it && it.title ? it.title : '' }));
+      } catch (e) {}
+      // Fetch details for top N items to extract authoritative fields like Game Name and Platform
+      const top = items.slice(0, Math.min(12, items.length));
+      async function fetchItemDetails(itemId) {
+        try {
+          if (!itemId) return null;
+          const dKey = `item_details:${itemId}`;
+          const cached = await getCache(dKey).catch(()=>null);
+          if (cached) return cached;
+          const dr = await axiosGetWithRetry(`https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(itemId)}`, { headers }, 2, 200).catch(()=>null);
+          const data = dr && dr.data ? dr.data : null;
+          if (data) { try { setCache(dKey, data, 1000 * 60 * 5).catch(()=>{}); } catch (e) {} }
+          return data;
+        } catch (_) { return null; }
+      }
+      function extractNameAndPlatform(details) {
+        const out = { gameName: null, platform: null };
+        try {
+          const scan = (obj) => {
+            if (!obj) return;
+            // aspects (object)
+            if (obj.aspects && typeof obj.aspects === 'object') {
+              for (const k of Object.keys(obj.aspects)) {
+                const key = k.toLowerCase();
+                const val = Array.isArray(obj.aspects[k]) ? obj.aspects[k][0] : obj.aspects[k];
+                if (!out.gameName && (key.includes('game') || key.includes('title') || key.includes('name'))) out.gameName = String(val);
+                if (!out.platform && (key.includes('platform') || key.includes('system'))) out.platform = String(val);
+              }
+            }
+            // itemSpecifics (array)
+            if (Array.isArray(obj.itemSpecifics)) {
+              for (const s of obj.itemSpecifics) {
+                const n = (s.name || '').toLowerCase();
+                const v = (s.value && (Array.isArray(s.value) ? s.value[0] : s.value)) || null;
+                if (!v) continue;
+                if (!out.gameName && (n.includes('game') || n.includes('title') || n.includes('name'))) out.gameName = String(v);
+                if (!out.platform && (n.includes('platform') || n.includes('system'))) out.platform = String(v);
+              }
+            }
+            // localizedAspects (array)
+            if (Array.isArray(obj.localizedAspects)) {
+              for (const la of obj.localizedAspects) {
+                const n = (la && la.name ? String(la.name) : '').toLowerCase();
+                const v = la && la.value ? la.value : null;
+                if (!v) continue;
+                const val = Array.isArray(v) ? v[0] : v;
+                if (!out.gameName && (n.includes('game') || n.includes('title') || n.includes('name'))) out.gameName = String(val);
+                if (!out.platform && (n.includes('platform') || n.includes('system'))) out.platform = String(val);
+              }
+            }
+            // product fields
+            if (obj.product) {
+              if (obj.product.aspects) {
+                for (const k of Object.keys(obj.product.aspects)) {
+                  const key = k.toLowerCase();
+                  const val = Array.isArray(obj.product.aspects[k]) ? obj.product.aspects[k][0] : obj.product.aspects[k];
+                  if (!out.gameName && (key.includes('game') || key.includes('title') || key.includes('name'))) out.gameName = String(val);
+                  if (!out.platform && (key.includes('platform') || key.includes('system'))) out.platform = String(val);
+                }
+              }
+              // sometimes product.title is authoritative
+              if (!out.gameName && obj.product.title) out.gameName = String(obj.product.title);
+            }
+            // as a last resort, consider details.title (but suggestions will still use cleaned fallback below)
+            if (!out.gameName && obj.title) out.gameName = String(obj.title);
+          };
+          scan(details || {});
+        } catch (e) {}
+        return out;
+      }
+      // limited concurrency
+      const concurrency = 4;
+      const enriched = [];
+      const queue = top.map(it => async () => {
+        const details = await fetchItemDetails(it.itemId || it.itemId || it.id);
+        const ex = extractNameAndPlatform(details || {});
+        return {
+          id: it.itemId || it.id,
+          gameName: ex.gameName || null,
+          platform: ex.platform || null,
+          title: (it.title || '').trim(),
+          category: (it.categoryPath || (it.primaryCategory && it.primaryCategory.categoryName)) || null,
+        };
+      });
+      const results = [];
+      const runners = new Array(concurrency).fill(null).map(async () => {
+        while (queue.length) {
+          const fn = queue.shift();
+          if (!fn) break;
+          try { results.push(await fn()); } catch (_) {}
+        }
+      });
+      await Promise.all(runners);
+      // Build suggestion candidates preferring gameName over a CLEANED title
+      const candidates = results.map(r => {
+        const cleanedTitle = cleanListingTitleForName(r.title || '');
+        const label = (r.gameName && r.gameName.trim()) || cleanedTitle;
+        const category = r.platform ? normalizePlatformLabel(r.platform) : r.category || null;
+        return { label, category, source: 'ebay' };
+      }).filter(c => !!c.label);
       const scored = scoreCandidates(rawQ, candidates, { max: 20 });
       try { await setCache(cacheKey, scored, 1000 * 60 * 1); } catch (e) {}
       return res.json({ suggestions: scored });

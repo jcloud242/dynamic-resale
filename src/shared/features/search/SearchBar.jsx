@@ -4,7 +4,7 @@ import { LuScanBarcode, LuSearch} from 'react-icons/lu';
 import { RiCameraAiLine } from "react-icons/ri";
 
 
-export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showScans = true, placeholder = 'Search title, UPC, ISBN...' }) {
+export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showScans = true, placeholder = 'Search title, UPC, ISBN...', augmentSuggestions = null, serverSuggest = true }) {
 	const [q, setQ] = useState('');
 	const [suggestions, setSuggestions] = useState([]);
 	const [visibleSuggestions, setVisibleSuggestions] = useState([]); // array of { label, source, category }
@@ -36,35 +36,49 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 			return;
 		}
 		const term = q.toLowerCase().trim();
-		if (term.length < 2) {
-			// require 2+ chars for server suggestions
-			setVisibleSuggestions([]);
-			setLoadingSuggest(false);
-			setHelperText('Type 2 or more characters for suggestions');
-			setHighlightIndex(-1);
-			return;
-		}
+			if (term.length < 2) {
+				// require 2+ chars for any suggestions UI at all
+				setVisibleSuggestions([]);
+				setLoadingSuggest(false);
+				setHelperText('Type 2 or more characters for suggestions');
+				setHighlightIndex(-1);
+				return;
+			}
 		setHelperText(null);
-		// eager local filtering first (kept for fallback) but prefer server suggestions when available
-		const filteredLocal = (suggestions || []).map(s => ({ label: s && (s.query || s) || s, source: 'recent' }))
-			.filter(s => s.label && String(s.label).toLowerCase().includes(term)).slice(0,6);
-		// schedule server suggestions
-		setLoadingSuggest(true);
+			// eager local filtering first with short-query bias: for 2-char terms prefer startsWith
+			const filteredLocal = (suggestions || [])
+				.map(s => ({ label: (s && (s.query || s)) || s, source: 'recent' }))
+				.filter(s => {
+					if (!s || !s.label) return false;
+					const lab = String(s.label).toLowerCase();
+					if (term.length === 2) return lab.startsWith(term);
+					return lab.includes(term);
+				})
+				.slice(0, 6);
+		// schedule suggestions (server optional)
+			setLoadingSuggest(true);
 		suggestTimer.current = setTimeout(async () => {
 			try {
-				// prefer server-side ranked suggestions (v2), fallback to simple v1
-				let data = null;
-				try {
-					const r2 = await fetch(`/api/suggest-v2?q=${encodeURIComponent(q)}`);
-					if (r2.ok) data = await r2.json();
-				} catch (err) {}
-				if (!data) {
-					const r1 = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
-					data = r1.ok ? await r1.json() : null;
-				}
-				const server = (data && data.suggestions) || [];
-				const merged = [];
-				const seen = new Set();
+					let server = [];
+					// Env toggles
+					const allowServerEnv = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUGGEST_SERVER !== '0');
+					const allowEbayEnv = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUGGEST_EBAY !== '0');
+					const allowServerThisTerm = serverSuggest && allowServerEnv && term.length >= 3;
+					if (allowServerThisTerm) {
+					// prefer server-side ranked suggestions (v2), fallback to simple v1
+					let data = null;
+					try {
+						const r2 = await fetch(`/api/suggest-v2?q=${encodeURIComponent(q)}`);
+						if (r2.ok) data = await r2.json();
+					} catch (err) {}
+					if (!data) {
+						const r1 = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
+						data = r1.ok ? await r1.json() : null;
+					}
+					server = (data && data.suggestions) || [];
+					}
+					const merged = [];
+					const seen = new Set();
 				// helper to detect likely game titles
 				const isLikelyGame = (s) => {
 					if (!s) return false;
@@ -75,7 +89,7 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 					return false;
 				};
 				// first include server suggestions and collect games separately to promote
-				const serverFiltered = server.map(s => ({ label: s.label || s, source: s.source || 'server', category: s.category || null }));
+				const serverFiltered = (server || []).map(s => ({ label: s.label || s, source: s.source || 'server', category: s.category || null }));
 				const gameBuckets = [];
 				const otherBuckets = [];
 				for (const s of serverFiltered) {
@@ -93,31 +107,45 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 					if (merged.length >= 6) break;
 					merged.push(o);
 				}
-				// then fill with local recents if still sparse
-				if (merged.length < 6) {
-					for (const s of filteredLocal) {
-						if (!seen.has(s.label)) { seen.add(s.label); merged.push(s); if (merged.length >= 6) break; }
+					// then fill with local recents if still sparse
+					if (merged.length < 6) {
+						for (const s of filteredLocal) {
+							if (!s || !s.label) continue;
+							if (seen.has(s.label)) continue;
+							seen.add(s.label);
+							merged.push(s);
+							if (merged.length >= 6) break;
+						}
 					}
-				}
-	// if still sparse, try eBay-backed suggestions to make the experience feel live
-	if (merged.length < 4) {
+					// if still sparse, try eBay-backed suggestions (only if enabled and term >= 3)
+					if (allowServerThisTerm && allowEbayEnv && merged.length < 4) {
+						try {
+							const r3 = await fetch(`/api/ebay-suggest?q=${encodeURIComponent(q)}`);
+							if (r3.ok) {
+								const d3 = await r3.json();
+								const ebay = (d3 && d3.suggestions) || [];
+								for (const s of ebay) {
+									const lab = s && s.label;
+									if (!lab) continue;
+									if (seen.has(lab)) continue;
+									seen.add(lab);
+									merged.push({ label: lab, source: s.source || 'ebay', category: s.category || null });
+									if (merged.length >= 6) break;
+								}
+							}
+						} catch (e) {}
+					}
+		// Inject caller-provided augmented suggestions (e.g., Collections/Lists), displayed above live suggestions
+		let augmented = [];
 		try {
-			const r3 = await fetch(`/api/ebay-suggest?q=${encodeURIComponent(q)}`);
-			if (r3.ok) {
-				const d3 = await r3.json();
-				const ebay = (d3 && d3.suggestions) || [];
-				for (const s of ebay) {
-					const lab = s && s.label;
-					if (!lab) continue;
-					if (seen.has(lab)) continue;
-					seen.add(lab);
-					merged.push({ label: lab, source: s.source || 'ebay', category: s.category || null });
-					if (merged.length >= 6) break;
-				}
+			if (typeof augmentSuggestions === 'function') {
+				const extra = augmentSuggestions(q);
+					if (Array.isArray(extra)) augmented = extra.slice(0, 12);
 			}
 		} catch (e) {}
-	}
-	setVisibleSuggestions(merged.slice(0,6));
+			// Always show local sections (augmented) before live; hard cap total at 12
+			const finalList = [...augmented, ...merged].slice(0, 12);
+		setVisibleSuggestions(finalList);
 	setHighlightIndex(-1);
 			} catch (e) {
 				// ignore
@@ -162,14 +190,18 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 		}
 	}
 
-	function chooseSuggestion(s) {
+		function chooseSuggestion(s) {
 		if (!s) return;
-		// s may be a string or an object { label, category, source }
-		const payload = (typeof s === 'string') ? { query: s } : { query: s.label || s, category: s.category, source: s.source };
+			// s may be a string or an object { label, category, source, ... }
+			if (typeof s === 'object' && s.source && (s.source === 'section' || s.source === 'separator')) {
+				return; // non-interactive rows
+			}
+			const payload = (typeof s === 'string') ? { query: s } : Object.assign({ query: s.label || s }, s);
+			// preserve the user's original typed input so the server can tell if they intended CIB/loose, etc.
+			try { payload.originalInput = q; } catch (_) {}
 		try {
 			onSearch(payload);
 		} finally {
-			setQ('');
 			setVisibleSuggestions([]);
 			setHelperText(null);
 			setHighlightIndex(-1);
@@ -177,24 +209,39 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 	}
 
 	function handleKeyDown(e) {
-		if (!visibleSuggestions || visibleSuggestions.length === 0) return;
+		// navigation through suggestions
 		if (e.key === 'ArrowDown') {
-			e.preventDefault();
-			setHighlightIndex(i => Math.min((visibleSuggestions.length - 1), (i < 0 ? 0 : i + 1)));
-		} else if (e.key === 'ArrowUp') {
-			e.preventDefault();
-			setHighlightIndex(i => Math.max(0, (i <= 0 ? visibleSuggestions.length - 1 : i - 1)));
-		} else if (e.key === 'Enter') {
-			// only select suggestion if user has actively highlighted one
-			if (highlightIndex >= 0 && visibleSuggestions[highlightIndex]) {
+			if (visibleSuggestions && visibleSuggestions.length > 0) {
 				e.preventDefault();
-				chooseSuggestion(visibleSuggestions[highlightIndex].label || visibleSuggestions[highlightIndex]);
-			} else {
-				// allow normal submit (search by exact input)
+				setHighlightIndex((prev) => {
+					const next = prev + 1;
+					return next >= visibleSuggestions.length ? 0 : next;
+				});
 			}
-		} else if (e.key === 'Escape') {
+			return;
+		}
+		if (e.key === 'ArrowUp') {
+			if (visibleSuggestions && visibleSuggestions.length > 0) {
+				e.preventDefault();
+				setHighlightIndex((prev) => {
+					const next = prev - 1;
+					return next < 0 ? Math.max(visibleSuggestions.length - 1, 0) : next;
+				});
+			}
+			return;
+		}
+		if (e.key === 'Enter') {
+			if (visibleSuggestions && visibleSuggestions.length > 0 && highlightIndex >= 0 && visibleSuggestions[highlightIndex]) {
+				e.preventDefault();
+				const selected = visibleSuggestions[highlightIndex];
+				chooseSuggestion(selected);
+			}
+			return;
+		}
+		if (e.key === 'Escape') {
 			setVisibleSuggestions([]);
 			setHighlightIndex(-1);
+			return;
 		}
 	}
 
@@ -228,28 +275,42 @@ export default function SearchBar({ onSearch, onOpenCamera, onOpenImage, showSca
 				/>
 				<div className={`dr-suggestions ${ (loadingSuggest || (visibleSuggestions && visibleSuggestions.length > 0) || helperText) ? 'open' : '' }`} role="listbox">
 					{helperText && !loadingSuggest && <div className="dr-suggest-loading">{helperText}</div>}
-					{loadingSuggest && <div className="dr-suggest-loading">Searching...</div>}
-					{!loadingSuggest && visibleSuggestions && visibleSuggestions.length > 0 && (
-						visibleSuggestions.map((s, i) => (
-							<button key={i}
-								type="button"
-								className={`dr-suggestion ${i === highlightIndex ? 'active' : ''}`}
-								onMouseEnter={() => setHighlightIndex(i)}
-								onClick={() => chooseSuggestion(s.label || s)}
-							>
-								<div className="dr-suggestion-title">{renderHighlighted(s, q)}</div>
-								{(() => {
-									const parts = [];
-									if (s && s.category) parts.push(s.category);
-									// detect platform tokens in label as hint
-									const label = (s && s.label) || '';
-									const pTokens = ['Nintendo Switch','Switch','PS5','PS4','3DS','Wii U','Xbox One','PC','DS'];
-									for (const t of pTokens) if (label.includes(t) && !parts.includes(t)) parts.push(t);
-									return parts.length ? <div className="dr-suggestion-cat">{parts.join(' • ')}</div> : null;
-								})()}
-							</button>
-						))
-					)}
+								{loadingSuggest && <div className="dr-suggest-loading">Searching...</div>}
+								{(!loadingSuggest && visibleSuggestions && visibleSuggestions.length > 0) && (
+									visibleSuggestions.map((s, i) => {
+										const isSection = typeof s === 'object' && s.source === 'section';
+										const isSeparator = typeof s === 'object' && s.source === 'separator';
+										if (isSection) {
+											return (
+												<div key={i} className="dr-suggest-section">{s.label}</div>
+											);
+										}
+										if (isSeparator) {
+											return (
+												<div key={i} className="dr-suggest-sep" aria-hidden="true" />
+											);
+										}
+										return (
+											<button key={i}
+												type="button"
+												className={`dr-suggestion ${i === highlightIndex ? 'active' : ''}`}
+												onMouseEnter={() => setHighlightIndex(i)}
+												onClick={() => chooseSuggestion(s)}
+											>
+												<div className="dr-suggestion-title">{renderHighlighted(s, q)}</div>
+												{(() => {
+													const parts = [];
+													if (s && s.category) parts.push(s.category);
+													// detect platform tokens in label as hint
+													const label = (s && s.label) || '';
+													const pTokens = ['Nintendo Switch','Switch','PS5','PS4','3DS','Wii U','Xbox One','PC','DS'];
+													for (const t of pTokens) if (label.includes(t) && !parts.includes(t)) parts.push(t);
+													return parts.length ? <div className="dr-suggestion-cat">{parts.join(' • ')}</div> : null;
+												})()}
+											</button>
+										);
+									})
+								)}
 				</div>
 			</div>
 			<button type="submit" className="dr-search-icon" aria-label="Search"><LuSearch size={20} /></button>

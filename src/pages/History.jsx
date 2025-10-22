@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import "./home.css";
 import "@styles/page.css";
 import SearchBar from "@features/search/SearchBar.jsx";
+import { postSearch } from "@services/api.js";
+import { extractPlatform, extractYear } from "@lib/titleHelpers.js";
 import ResultList from "@features/results/ResultList.jsx";
 import { FaRegSquarePlus } from "react-icons/fa6";
 import { IoFilter } from "react-icons/io5";
@@ -13,6 +15,7 @@ export default function History({ onNavigateToAnalytics }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [page, setPage] = useState(1);
+  const [uiLoading, setUiLoading] = useState(false);
   const [sortMode, setSortMode] = useState(null); // 'title-asc', 'title-desc', 'value-asc', 'value-desc', 'category'
   const [sortOverlayOpen, setSortOverlayOpen] = useState(false);
   const [availableTags, setAvailableTags] = useState([]); // normalized strings persisted
@@ -20,9 +23,10 @@ export default function History({ onNavigateToAnalytics }) {
   const filterBtnRef = useRef(null);
   const [overlayPos, setOverlayPos] = useState(null);
   const recentRef = useRef(null);
+  const firstKeyRef = useRef(null);
 
   useEffect(() => {
-    function loadRecent() {
+    async function loadRecent() {
       try {
         const raw = JSON.parse(localStorage.getItem("dr_recent") || "[]");
         setResults(raw || []);
@@ -31,6 +35,64 @@ export default function History({ onNavigateToAnalytics }) {
       }
     }
     loadRecent();
+  // One-time backfill: add platform/releaseYear to existing entries if missing
+    try {
+      const MIGRATION_KEY = "dr_recent_backfilled_v1";
+      const REFINE_KEY = "dr_recent_refined_v1";
+      const did = localStorage.getItem(MIGRATION_KEY);
+      if (!did) {
+        const raw = JSON.parse(localStorage.getItem("dr_recent") || "[]") || [];
+        let changed = false;
+        const updated = raw.map((it) => {
+          if (!it) return it;
+          const title = (it.title || it.query || "");
+          let platform = it.platform || extractPlatform([], title) || null;
+          let releaseYear = it.releaseYear || extractYear([], title) || null;
+          if (platform !== it.platform || releaseYear !== it.releaseYear) {
+            changed = true;
+            return Object.assign({}, it, { platform, releaseYear });
+          }
+          return it;
+        });
+        if (changed) {
+          try { localStorage.setItem("dr_recent", JSON.stringify(updated)); } catch (e) {}
+          setResults(updated);
+        }
+        try { localStorage.setItem(MIGRATION_KEY, "1"); } catch (e) {}
+      }
+    } catch (e) {}
+
+    // Lightweight refine pass: for a few top entries, fetch a fresh search to improve title/platform/year
+    (async () => {
+      try {
+        const didRefine = localStorage.getItem("dr_recent_refined_v1");
+        if (!didRefine) {
+          const raw = JSON.parse(localStorage.getItem("dr_recent") || "[]") || [];
+          const candidates = raw.slice(0, 6).filter(it => it && it.query);
+          const refined = raw.slice();
+          for (let i = 0; i < candidates.length; i++) {
+            const it = candidates[i];
+            try {
+              const res = await postSearch({ query: it.query, preferCompleted: true });
+              const betterTitle = (res && (res.gameName || res.title)) || it.title;
+              const platform = res && (res.platform || it.platform) || it.platform || null;
+              const releaseYear = res && (res.releaseYear || it.releaseYear) || it.releaseYear || null;
+              const idx = refined.findIndex(r => r && (r.query === it.query));
+              if (idx !== -1) {
+                refined[idx] = Object.assign({}, refined[idx], {
+                  title: betterTitle,
+                  platform,
+                  releaseYear,
+                });
+              }
+            } catch (e) { /* ignore individual failures */ }
+          }
+          try { localStorage.setItem("dr_recent", JSON.stringify(refined)); } catch (e) {}
+          setResults(refined);
+          try { localStorage.setItem("dr_recent_refined_v1", "1"); } catch (e) {}
+        }
+      } catch (e) {}
+    })();
     // load persisted available tags (normalized strings)
     try {
       const t = JSON.parse(localStorage.getItem("dr_tags") || "[]");
@@ -70,6 +132,7 @@ export default function History({ onNavigateToAnalytics }) {
   // searchLocal optionally takes a tagsOverride array to avoid async state races
   function searchLocal(q, tagsOverride) {
     setQuery(q || "");
+    setUiLoading(true);
     const useTags = Array.isArray(tagsOverride) ? tagsOverride : activeTags;
     // always start from the full stored recent history to avoid cumulative filtering
     let arr = (
@@ -126,7 +189,33 @@ export default function History({ onNavigateToAnalytics }) {
     }
     setResults(arr || []);
     setPage(1);
+    // remember the first item's key for focus scrolling
+    try {
+      const first = (arr && arr[0]) || null;
+      firstKeyRef.current = first ? (first.query || first.title || null) : null;
+    } catch (e) { firstKeyRef.current = null; }
+    // light skeleton effect
+    setTimeout(() => setUiLoading(false), 120);
   }
+
+  // After results update, scroll to the first match and flash-highlight
+  useEffect(() => {
+    if (!firstKeyRef.current) return;
+    const key = firstKeyRef.current;
+    // small delay to ensure DOM updated
+    const t = setTimeout(() => {
+      try {
+        const root = recentRef.current || document;
+        const el = root.querySelector && root.querySelector(`[data-dr-key="${CSS.escape(String(key))}"]`);
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('dr-flash');
+          setTimeout(() => el.classList.remove('dr-flash'), 1200);
+        }
+      } catch (e) {}
+    }, 60);
+    return () => clearTimeout(t);
+  }, [results, page]);
 
   function toggleTag(label) {
     const norm = normalizeTag(label);
@@ -250,9 +339,10 @@ export default function History({ onNavigateToAnalytics }) {
             onOpenImage={() => {}}
             showScans={false}
             placeholder="Search History"
+            serverSuggest={false}
           />
         </div>
-        {/* right side: filter icon only (SearchBar has its own submit button) */}
+        {/* right side: controls */}
         <button
           ref={filterBtnRef}
           className="dr-filter-btn dr-icon-btn"
@@ -276,6 +366,19 @@ export default function History({ onNavigateToAnalytics }) {
           <span className="dr-icon-inner">
             <IoFilter size={20} />
           </span>
+        </button>
+        <button
+          className="dr-clear"
+          onClick={() => {
+            if (!confirm("Clear your history? This can't be undone.")) return;
+            try { localStorage.removeItem("dr_recent"); } catch (e) {}
+            setResults([]);
+            try { window.dispatchEvent(new CustomEvent("dr_recent_changed")); } catch (e) {}
+          }}
+          style={{ fontSize: 12, padding: "6px 8px" }}
+          title="Clear History"
+        >
+          Clear History
         </button>
       </div>
 
@@ -375,16 +478,39 @@ export default function History({ onNavigateToAnalytics }) {
         className="dr-recent-wrapper"
         style={{ marginTop: 8 }}
       >
-        <ResultList
-          items={pageItems}
-          active={false}
-          hideChart={true}
-          onAnalyticsClick={(it) => {
-            try {
-              if (onNavigateToAnalytics) onNavigateToAnalytics(it);
-            } catch (e) {}
-          }}
-        />
+        {uiLoading ? (
+          <div>
+            {Array.from({ length: Math.min(3, pageItems.length || 3) }).map((_, i) => (
+              <div key={i} className="dr-resultcard-wrap" aria-hidden>
+                <div className="dr-resultcard">
+                  <div className="dr-thumb" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06))', backgroundSize: '200% 100%', animation: 'dr-shimmer 1.2s infinite' }} />
+                  <div className="dr-main" style={{ flex: 1 }}>
+                    <div className="dr-title" style={{ height: 18, maxWidth: '70%', background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                      <div style={{ width: 80, height: 16, background: 'rgba(0,0,0,0.06)', borderRadius: 999 }} />
+                      <div style={{ width: 48, height: 16, background: 'rgba(0,0,0,0.06)', borderRadius: 999 }} />
+                    </div>
+                  </div>
+                  <div className="dr-stats">
+                    <div style={{ width: 64, height: 18, background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ResultList
+            items={pageItems}
+            active={false}
+            hideChart={true}
+            getDataKey={(it)=> (it && (it.query || it.title))}
+            onAnalyticsClick={(it) => {
+              try {
+                if (onNavigateToAnalytics) onNavigateToAnalytics(it);
+              } catch (e) {}
+            }}
+          />
+        )}
       </div>
 
       {/* Pagination */}
@@ -397,6 +523,15 @@ export default function History({ onNavigateToAnalytics }) {
           marginTop: 12,
         }}
       >
+        {/* Back to top */}
+        <button
+          className="rounded border px-2 py-1 text-sm"
+          onClick={() => { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {} }}
+          title="Back to top"
+          aria-label="Back to top"
+        >
+          Top
+        </button>
         <div className="dr-pagination">
           <button
             aria-label="Previous"

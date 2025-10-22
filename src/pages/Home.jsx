@@ -1,20 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import "@styles/page.css";
 import "./home.css";
-import SearchBar from "@features/search/SearchBar.jsx";
-import CameraModal from "@features/camera/CameraModal.jsx";
+import SearchHeader from "@features/search/SearchHeader.jsx";
 import ResultList from "@features/results/ResultList.jsx";
 import { postSearch } from "@services/api.js";
-import { cleanTitle } from "@lib/titleHelpers.js";
+import { cleanTitle, extractYear, extractPlatform } from "@lib/titleHelpers.js";
 import { MdHistory } from "react-icons/md";
 
-export default function Home({ onSearchComplete = null }) {
+export default function Home({ onSearchComplete = null, onNavigateToAnalytics = null }) {
   const [recent, setRecent] = useState([]);
   // control how many recent items are visible in the panel
   const [recentVisibleCount, setRecentVisibleCount] = useState(4);
 
   const [active, setActive] = useState(null);
-  const [camera, setCamera] = useState({ open: false, mode: "barcode" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // show starter only when there's no active search result; do not persist a 'seen' flag
@@ -56,8 +54,12 @@ export default function Home({ onSearchComplete = null }) {
       opts = Object.assign({}, opts, {
         category: query.category,
         source: query.source,
+        // forward the user's original typed input when a suggestion is chosen
+        originalInput: query.originalInput,
       });
     }
+    // hide starter so the skeleton/result region is visible during loading
+    try { setShowStarter(false); } catch (e) {}
     // dedupe identical queries fired within a short span
     if (lastQueryRef.current === rawQuery) return;
     lastQueryRef.current = rawQuery;
@@ -123,6 +125,8 @@ export default function Home({ onSearchComplete = null }) {
       } else {
         setActive(res);
       }
+      // persist the latest analytics item so Analytics page picks the same result
+  try { localStorage.setItem("dr_last_analytics_item", JSON.stringify(res)); window.dispatchEvent(new CustomEvent('dr_last_analytics_item_changed')); } catch (e) {}
       saveRecent(res);
       // notify parent that a search completed so nav can highlight Home
       try {
@@ -146,6 +150,7 @@ export default function Home({ onSearchComplete = null }) {
             if (lastQueryRef.current === query) setActive(fresh);
             // update recent storage with fresh result
             saveRecent(fresh);
+            try { localStorage.setItem("dr_last_analytics_item", JSON.stringify(fresh)); } catch (e) {}
           } catch (e) {
             // ignore background refresh failures
             console.warn("Background refresh failed", e && e.message);
@@ -168,6 +173,7 @@ export default function Home({ onSearchComplete = null }) {
               if (lastQueryRef.current === query && enriched) {
                 setActive(enriched);
                 saveRecent(enriched);
+                try { localStorage.setItem("dr_last_analytics_item", JSON.stringify(enriched)); window.dispatchEvent(new CustomEvent('dr_last_analytics_item_changed')); } catch (e) {}
               }
             } catch (e) {
               // ignore background enrichment failures
@@ -186,14 +192,32 @@ export default function Home({ onSearchComplete = null }) {
   }
 
   function saveRecent(res) {
+    if (!res) return;
+    // ensure a stable key and minimal fields exist
+    const key = (res && (res.query || res.upc || res.title)) || "";
+    // Store a slim entry to avoid localStorage quota errors (do NOT merge full result)
+    const entry = {
+      query: res.query || res.upc || key,
+      title: res.title || res.query || key,
+      upc: res.upc || null,
+      thumbnail: res.thumbnail || "/vite.svg",
+      avgPrice: res.avgPrice ?? null,
+      minPrice: res.minPrice ?? null,
+      maxPrice: res.maxPrice ?? null,
+      // keep both category (for grouping) and platform (for badges)
+      category: res.category || res.platform || null,
+      platform: res.platform || extractPlatform(res.soldListings || [], res.title || res.query || "") || null,
+      releaseYear: res.releaseYear || extractYear(res.soldListings || [], res.title || res.query || "") || null,
+      fetchedAt: res.fetchedAt || new Date().toISOString(),
+    };
     const r = JSON.parse(localStorage.getItem("dr_recent") || "[]");
-    // move existing entry to front or add new
-    const idx = r.findIndex((it) => it && it.query === res.query);
+    // move existing entry to front or add new (dedupe by query/upc/title key)
+    const idx = r.findIndex((it) => it && (it.query === key || it.upc === key || it.title === key));
     if (idx !== -1) {
       r.splice(idx, 1);
-      r.unshift(res);
+      r.unshift(entry);
     } else {
-      r.unshift(res);
+      r.unshift(entry);
     }
     try {
       localStorage.setItem("dr_recent", JSON.stringify(r.slice(0, 10)));
@@ -210,7 +234,7 @@ export default function Home({ onSearchComplete = null }) {
       fetch("/api/recent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: res.query, title: res.title }),
+        body: JSON.stringify({ query: entry.query, title: entry.title }),
       }).catch(() => {});
     } catch (e) {}
   }
@@ -259,14 +283,14 @@ export default function Home({ onSearchComplete = null }) {
   return (
   <main className="dr-page dr-home">
       <div className="dr-actions">
-        <SearchBar
+        <SearchHeader
           onSearch={handleSearch}
-          onOpenCamera={() => setCamera({ open: true, mode: "barcode" })}
-          onOpenImage={() => setCamera({ open: true, mode: "image" })}
+          onDetected={handleDetected}
+          showScans={true}
         />
       </div>
       {/* Starter card: shows until first successful search or until dismissed */}
-      {showStarter && (
+      {showStarter && !loading && (
         <div
           className={`dr-resultcard-wrap dr-starter-card ${
             loading ? "dr-loading" : ""
@@ -283,17 +307,38 @@ export default function Home({ onSearchComplete = null }) {
       )}
 
       <section className="dr-results">
-        {loading && !showStarter && (
-          <div className="dr-loading">Searching…</div>
-        )}
-        {error && (
-          <div className="dr-error">
-            Error: {typeof error === "string" ? error : JSON.stringify(error)}
-          </div>
-        )}
-        {active && (
-          <div>
-            <ResultList items={[active]} active />
+        {(loading || error || active) && !showStarter && (
+          <div className="dr-resultcard-wrap" style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>Search result</div>
+              <button className="rounded border px-2 py-1 text-sm" onClick={()=>{ setActive(null); setError(null); }}>Dismiss</button>
+            </div>
+            {loading && (
+              <div className="dr-resultcard-wrap" aria-hidden>
+                <div className="dr-resultcard">
+                  <div className="dr-thumb" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06))', backgroundSize: '200% 100%', animation: 'dr-shimmer 1.2s infinite' }} />
+                  <div className="dr-main" style={{ flex: 1 }}>
+                    <div className="dr-title" style={{ height: 18, maxWidth: '70%', background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                      <div style={{ width: 80, height: 16, background: 'rgba(0,0,0,0.06)', borderRadius: 999 }} />
+                      <div style={{ width: 48, height: 16, background: 'rgba(0,0,0,0.06)', borderRadius: 999 }} />
+                    </div>
+                  </div>
+                  <div className="dr-stats">
+                    <div style={{ width: 64, height: 18, background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                  </div>
+                </div>
+              </div>
+            )}
+            {error && <div className="dr-error">{typeof error === 'string' ? error : JSON.stringify(error)}</div>}
+            {!loading && active && (
+              <ResultList
+                items={[active]}
+                active
+                hideChart={true}
+                onAnalyticsClick={(it) => { try { if (onNavigateToAnalytics) onNavigateToAnalytics(it); } catch (e) {} }}
+              />
+            )}
           </div>
         )}
         <div>
@@ -305,28 +350,9 @@ export default function Home({ onSearchComplete = null }) {
             }}
           >
             <div className="dr-recent-header">
-              <button
-                aria-label="Open history"
-                className="dr-history-btn"
-                onClick={() => {
-                  /* navigate to history page later */
-                }}
-              >
-                <MdHistory size={20} />
                 <h3 style={{ margin: 0 }}>Recent</h3>
-              </button>
             </div>
-            <div>
-              <button
-                className="dr-clear"
-                onClick={() => {
-                  clearRecent();
-                }}
-                style={{ fontSize: 12, padding: "6px 8px" }}
-              >
-                Clear Recent
-              </button>
-            </div>
+            {/* Clear moved to History page to avoid accidental loss */}
           </div>
           <div
             className={`dr-recent-wrapper ${
@@ -337,13 +363,7 @@ export default function Home({ onSearchComplete = null }) {
           </div>
         </div>
       </section>
-      {camera.open && (
-        <CameraModal
-          mode={camera.mode}
-          onClose={() => setCamera({ open: false, mode: camera.mode })}
-          onDetected={handleDetected}
-        />
-      )}
+      {/* Camera modal handled by SearchHeader */}
     </main>
   );
 }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, Component } from "react";
 import RechartsAnalytics from "@ui/charts/RechartsAnalytics.jsx";
-import SearchBar from "@features/search/SearchBar.jsx";
+import SearchHeader from "@features/search/SearchHeader.jsx";
 import "./analytics.css";
 import "@styles/page.css";
 import ResultList from "@features/results/ResultList.jsx";
 import { formatResultTitle } from "@lib/titleHelpers.js";
 import MetricBox from "@components/MetricBox.jsx";
+import { postSearch } from "@services/api.js";
 
 
 // Client-side estimator (mirrors server heuristics when sold data isn't available)
@@ -159,12 +160,35 @@ class ErrorBoundary extends Component {
 
 function AnalyticsInner({ item, onBack }) {
   // Summary dashboard with search and item-level analytics below
-  const recent = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("dr_recent") || "[]") || [];
-    } catch (e) {
-      return [];
+  const [recent, setRecent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("dr_recent") || "[]") || []; } catch { return []; }
+  });
+  const [lastAnalyticsItem, setLastAnalyticsItem] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dr_last_analytics_item') || 'null'); } catch { return null; }
+  });
+  // Keep recent and last item synced across tabs and page interactions
+  useEffect(() => {
+    function reloadRecent() {
+      try { setRecent(JSON.parse(localStorage.getItem('dr_recent') || '[]') || []); } catch {}
     }
+    function reloadLast() {
+      try { setLastAnalyticsItem(JSON.parse(localStorage.getItem('dr_last_analytics_item') || 'null')); } catch {}
+    }
+    const onStorage = (e) => {
+      if (!e) return;
+      if (e.key === 'dr_recent') reloadRecent();
+      if (e.key === 'dr_last_analytics_item') reloadLast();
+    };
+    function onRecentChanged() { reloadRecent(); }
+    function onLastChanged() { reloadLast(); }
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('dr_recent_changed', onRecentChanged);
+    window.addEventListener('dr_last_analytics_item_changed', onLastChanged);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('dr_recent_changed', onRecentChanged);
+      window.removeEventListener('dr_last_analytics_item_changed', onLastChanged);
+    };
   }, []);
   const [selectedItem, setSelectedItem] = useState(null);
   // slider controls target profit percentage (profit margin)
@@ -179,6 +203,42 @@ function AnalyticsInner({ item, onBack }) {
   const [serverEstimate, setServerEstimate] = useState(null);
   const [estLoading, setEstLoading] = useState(false);
   const [estError, setEstError] = useState(null);
+  const [loadingItem, setLoadingItem] = useState(false);
+
+  // persist a recent entry and notify listeners (History/Home)
+  function saveRecent(res) {
+    if (!res) return;
+    try {
+      const key = (res && (res.query || res.upc || res.title)) || "";
+      const entry = {
+        query: res.query || res.upc || key,
+        title: res.title || res.query || key,
+        upc: res.upc || null,
+        thumbnail: res.thumbnail || "/vite.svg",
+        avgPrice: res.avgPrice ?? null,
+        minPrice: res.minPrice ?? null,
+        maxPrice: res.maxPrice ?? null,
+        category: res.category || res.platform || null,
+        platform: res.platform || null,
+        releaseYear: res.releaseYear || null,
+        fetchedAt: res.fetchedAt || new Date().toISOString(),
+      };
+      const r = JSON.parse(localStorage.getItem("dr_recent") || "[]");
+      const idx = r.findIndex((it) => it && (it.query === key || it.upc === key || it.title === key));
+      if (idx !== -1) {
+        r.splice(idx, 1);
+        r.unshift(entry);
+      } else {
+        r.unshift(entry);
+      }
+      localStorage.setItem("dr_recent", JSON.stringify(r.slice(0, 10)));
+      try { window.dispatchEvent(new CustomEvent("dr_recent_changed")); } catch (e) {}
+      // best-effort server persistence
+      try {
+        fetch("/api/recent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: entry.query, title: entry.title }) }).catch(() => {});
+      } catch (e) {}
+    } catch (e) {}
+  }
 
   // mock a 1-year series (2024-01-01 .. 2024-12-31) using random-ish walk from an avg
   function makeYearSeries(base = 30) {
@@ -198,7 +258,8 @@ function AnalyticsInner({ item, onBack }) {
   }
 
   // pick a default item (first recent) if no selected
-  const itemToShow = item || selectedItem || recent[0] || null;
+  // Prefer any freshly fetched selection over a passed-in prop item to avoid stale slim entries from History
+  const itemToShow = selectedItem || item || lastAnalyticsItem || recent[0] || null;
   // memoize generated series so it doesn't change on every render (prevents twitching)
   const series = useMemo(() => {
     return itemToShow
@@ -235,35 +296,85 @@ function AnalyticsInner({ item, onBack }) {
     return score;
   }
 
-  let top5 = [];
-  if (itemToShow && itemToShow.title) {
-    const bTokens = tokenize(itemToShow.title || itemToShow.query || "");
-    const scored = (recent || []).map((r) => ({
-      r,
-      score: scoreItem(r, bTokens),
-    }));
-    scored.sort(
-      (x, y) =>
-        y.score - x.score ||
-        new Date(y.r.fetchedAt || 0) - new Date(x.r.fetchedAt || 0)
-    );
-    top5 = scored
-      .filter((s) => s.score > 0)
-      .map((s) => s.r)
-      .slice(0, 5);
-  }
-  if (!top5 || !top5.length) top5 = (recent || []).slice(0, 5);
-  top5 = top5.map((r) => {
-    const fmt = formatResultTitle(r || {});
-    return {
-      title: fmt.displayTitle || r.title || r.query,
-      platform: r.platform || r.category || "",
-      year: (r.year || "").toString().slice(0, 4),
-      price: r.avgPrice || r.maxPrice || r.minPrice || 0,
-      date: r.fetchedAt ? new Date(r.fetchedAt).toISOString().slice(0, 10) : "",
-      meta: fmt.meta,
-    };
-  });
+  // Prefer server-provided ranked candidates (top 5) for the currently selected item
+  const topCandidates = useMemo(() => {
+    if (itemToShow && Array.isArray(itemToShow.rankedCandidates) && itemToShow.rankedCandidates.length) {
+      return itemToShow.rankedCandidates.slice(0,5).map(c => ({
+        id: c.id,
+        title: c.gameName || c.title,
+        platform: c.platform || '',
+        price: typeof c.price === 'number' ? c.price : null,
+        itemHref: c.itemHref || null,
+        thumbnail: c.thumbnail || null,
+        score: typeof c.score === 'number' ? c.score : null,
+      }));
+    }
+    // fallback to prior local top5 heuristic from recents
+    let top5 = [];
+    if (itemToShow && itemToShow.title) {
+      const bTokens = tokenize(itemToShow.title || itemToShow.query || "");
+      const scored = (recent || []).map((r) => ({ r, score: scoreItem(r, bTokens) }));
+      scored.sort((x,y) => y.score - x.score || new Date(y.r.fetchedAt||0) - new Date(x.r.fetchedAt||0));
+      top5 = scored.filter(s => s.score > 0).map(s => s.r).slice(0,5);
+    }
+    if (!top5 || !top5.length) top5 = (recent || []).slice(0,5);
+    return top5.map((r) => {
+      const fmt = formatResultTitle(r || {});
+      return {
+        id: null,
+        title: fmt.displayTitle || r.title || r.query,
+        platform: r.platform || r.category || '',
+        price: r.avgPrice || r.maxPrice || r.minPrice || 0,
+        itemHref: null,
+        thumbnail: r.thumbnail || null,
+        score: null,
+      };
+    });
+  }, [itemToShow && (itemToShow.id || itemToShow.title || itemToShow.query), recent]);
+
+  // If the current item lacks rankedCandidates, ask the server for a fresh search result
+  // (will hit cache when available) to populate rankedCandidates for Analytics.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!itemToShow) return;
+        const hasRanked = Array.isArray(itemToShow.rankedCandidates) && itemToShow.rankedCandidates.length > 0;
+        const q = itemToShow.query || itemToShow.title || itemToShow.upc || '';
+        if (!q) return;
+        // Force a refresh when the current context came from History (prop item),
+        // or when rankedCandidates are missing. This ensures we always hydrate a full result.
+        const shouldForce = (!!item) || !hasRanked;
+        if (!shouldForce) return;
+        setLoadingItem(true);
+        const res = await postSearch({ query: q, opts: { suppressCachedBadge: true } });
+        if (cancelled || !res) return;
+        setSelectedItem(res);
+        try { localStorage.setItem('dr_last_analytics_item', JSON.stringify(res)); } catch (e) {}
+        setLoadingItem(false);
+      } catch (e) { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [itemToShow && (itemToShow.query || itemToShow.title)]);
+
+  // Additionally, explicitly react to changes of the History-provided item prop
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!item) return;
+        const q = item.query || item.title || item.upc || '';
+        if (!q) return;
+        setLoadingItem(true);
+        const res = await postSearch({ query: q, opts: { suppressCachedBadge: true } });
+        if (cancelled || !res) return;
+        setSelectedItem(res);
+        try { localStorage.setItem('dr_last_analytics_item', JSON.stringify(res)); } catch (e) {}
+        setLoadingItem(false);
+      } catch (e) { setLoadingItem(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [item && (item.query || item.title || item.upc)]);
 
   // rolling average (simple mean over recent with avgPrice)
   const avgPrices = (recent || [])
@@ -300,12 +411,12 @@ function AnalyticsInner({ item, onBack }) {
   };
   const defaultFeeRate = 0.13; // fallback fee rate
   const defaultShipping = 7; // fallback shipping cost estimate
-  const categoryKey = (
-    itemToShow &&
-    (itemToShow.category || itemToShow.platform || "")
-  )
-    .toString()
-    .toLowerCase();
+  const categoryKey = (function() {
+    try {
+      const raw = itemToShow ? (itemToShow.category || itemToShow.platform || '') : '';
+      return String(raw).toLowerCase();
+    } catch (e) { return ''; }
+  })();
   const categoryCfg = categoryFeeMap[categoryKey] || null;
   const feeRate =
     categoryCfg && typeof categoryCfg.feeRate === "number"
@@ -616,10 +727,44 @@ function AnalyticsInner({ item, onBack }) {
       >
       </div>
       <div className="dr-searchbar-wrapper">
-        <SearchBar
-          onSearch={() => {}}
-          onOpenCamera={() => {}}
-          onOpenImage={() => {}}
+        <SearchHeader
+          onSearch={async (payload) => {
+            try {
+              // normalize payload to a query string and opts
+              let q = payload;
+              let opts = { suppressCachedBadge: true };
+              if (typeof payload === 'object' && payload !== null) {
+                q = payload.query || payload.label || '';
+                opts = Object.assign({}, opts, {
+                  category: payload.category,
+                  source: payload.source,
+                  originalInput: payload.originalInput || (payload.query || payload.label || ''),
+                });
+              }
+              if (!q) return;
+              const res = await postSearch({ query: q, opts });
+              setSelectedItem(res);
+              try { localStorage.setItem('dr_last_analytics_item', JSON.stringify(res)); window.dispatchEvent(new CustomEvent('dr_last_analytics_item_changed')); } catch (e) {}
+              try { saveRecent(res); } catch (e) {}
+            } catch (e) {
+              // ignore errors in Analytics search to keep page resilient
+              console.warn('Analytics search failed', e && e.message);
+            }
+          }}
+          onDetected={async (det) => {
+            try {
+              if (!det || det.type !== 'barcode') return;
+              const q = det.value;
+              if (!q) return;
+              const res = await postSearch({ query: q, opts: { suppressCachedBadge: true, enrichUpcs: true, isBarcode: true, originalInput: q } });
+              setSelectedItem(res);
+              try { localStorage.setItem('dr_last_analytics_item', JSON.stringify(res)); window.dispatchEvent(new CustomEvent('dr_last_analytics_item_changed')); } catch (e) {}
+              try { saveRecent(res); } catch (e) {}
+            } catch (e) {
+              console.warn('Analytics barcode search failed', e && e.message);
+            }
+          }}
+          showScans={true}
         />
       </div>
       <div className="dr-main-card">
@@ -634,9 +779,15 @@ function AnalyticsInner({ item, onBack }) {
         />
         <div style={{ flex: 1 }}>
           <h3 className="dr-analytics-title" style={{ margin: 0 }}>
-            {itemToShow
-              ? itemToShow.title || itemToShow.query
-              : "Item analytics"}
+            {(() => {
+              if (!itemToShow) return "Item analytics";
+              try {
+                const t = formatResultTitle(itemToShow || {});
+                return t && t.displayTitle ? t.displayTitle : (itemToShow.title || itemToShow.query || "Item analytics");
+              } catch (e) {
+                return itemToShow.title || itemToShow.query || "Item analytics";
+              }
+            })()}
           </h3>
           <div
             style={{
@@ -666,32 +817,51 @@ function AnalyticsInner({ item, onBack }) {
       <div className="dr-analytics-grid">
         <div>
           <div className="dr-table">
-            {top5.map((r, i) => (
+            {!loadingItem && topCandidates.map((r, i) => (
               <div key={i} className="dr-table-row">
                 <div className="left">
                   <a
                     className="title"
-                    href="#"
+                    href={r.itemHref || '#'}
                     onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedItem(recent[i]);
+                      if (!r.itemHref) {
+                        // No outbound link available; keep selection unchanged.
+                        e.preventDefault();
+                        return;
+                      }
                     }}
+                    target={r.itemHref ? '_blank' : undefined}
+                    rel={r.itemHref ? 'noopener noreferrer' : undefined}
                   >
                     {r.title}
                   </a>
                   <div className="tags">
                     {r.platform ? (
-                      <span className="chip">{r.platform.toUpperCase()}</span>
-                    ) : null}{" "}
-                    {r.year ? <span className="chip">{r.year}</span> : null}
+                      <span className="chip">{String(r.platform).toUpperCase()}</span>
+                    ) : null}
+                    {/* Hide raw numeric score by default; keep as title tooltip for potential debug */}
                   </div>
                 </div>
                 <div className="right">
-                  <div className="dr-price">${Number(r.price).toFixed(2)}</div>
-                  <div className="date">{r.date}</div>
+                  <div className="dr-price">{typeof r.price === 'number' ? `$${Number(r.price).toFixed(2)}` : '—'}</div>
+                  <div className="date" />
                 </div>
               </div>
             ))}
+            {loadingItem ? (
+              <div className="dr-table-row" aria-hidden>
+                <div className="left">
+                  <div className="title" style={{ height: 18, maxWidth: '60%', background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                  <div className="tags" style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                    <span className="chip" style={{ width: 64, height: 16, background: 'rgba(0,0,0,0.06)' }} />
+                    <span className="chip" style={{ width: 40, height: 16, background: 'rgba(0,0,0,0.06)' }} />
+                  </div>
+                </div>
+                <div className="right">
+                  <div className="dr-price" style={{ width: 64, height: 18, background: 'rgba(0,0,0,0.08)', borderRadius: 4 }} />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
