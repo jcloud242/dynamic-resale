@@ -5,6 +5,7 @@ import RechartsAnalytics from "@ui/charts/RechartsAnalytics.jsx";
 import { postSearchForce } from "@services/api.js";
 import { formatResultTitle, extractYear, extractPlatform } from "@lib/titleHelpers.js";
 import { LuInfo } from "react-icons/lu";
+import { FaChartColumn } from "react-icons/fa6";
 import {
   MdOutlineTimeline,
   MdHistory,
@@ -282,13 +283,15 @@ export default function ResultCard({
   if (!itemState) return null;
 
   return (
-    <div className="dr-resultcard-wrap" data-dr-key={dataKey || undefined}>
-      <div className="dr-resultcard">
-        <img
-          src={item.thumbnail || "/vite.svg"}
-          alt="thumb"
-          className="dr-thumb"
-        />
+  <div className="dr-resultcard-wrap has-shadow" data-dr-key={dataKey || undefined}>
+    <div className="dr-resultcard">
+        <div className="dr-thumb-wrap">
+          <img
+            src={item.thumbnail || "/vite.svg"}
+            alt="thumb"
+            className="dr-thumb"
+          />
+        </div>
         <div className="dr-main">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div className="dr-title">{displayTitle}</div>
@@ -378,6 +381,28 @@ export default function ResultCard({
               <div className="dr-avg-row">
                 <div className="dr-avg">${fmt(itemState.avgPrice)}</div>
                 <button
+                  className="dr-chart-toggle"
+                  aria-label={hideChart ? "See Analytics" : "Toggle trend chart"}
+                  title={hideChart ? "See Analytics" : "Show trend"}
+                  aria-expanded={showChart}
+                  aria-controls={`chart-${(
+                    itemState.query ||
+                    itemState.title ||
+                    "chart"
+                  ).replace(/\s+/g, "-")}`}
+                  onClick={() => {
+                    if (hideChart) {
+                      try {
+                        if (onAnalyticsClick) onAnalyticsClick(itemState);
+                      } catch (e) {}
+                    } else {
+                      setShowChart((s) => !s);
+                    }
+                  }}
+                >
+                  <FaChartColumn size={16} />
+                </button>
+                <button
                   className="dr-avg-info"
                   aria-label="Show price info"
                   onClick={() => {
@@ -419,28 +444,6 @@ export default function ResultCard({
                   }}
                 >
                   <LuInfo size={14} />
-                </button>
-                <button
-                  className="dr-chart-toggle"
-                  aria-label={hideChart ? "See Analytics" : "Toggle trend chart"}
-                  title={hideChart ? "See Analytics" : "Show trend"}
-                  aria-expanded={showChart}
-                  aria-controls={`chart-${(
-                    itemState.query ||
-                    itemState.title ||
-                    "chart"
-                  ).replace(/\s+/g, "-")}`}
-                  onClick={() => {
-                    if (hideChart) {
-                      try {
-                        if (onAnalyticsClick) onAnalyticsClick(itemState);
-                      } catch (e) {}
-                    } else {
-                      setShowChart((s) => !s);
-                    }
-                  }}
-                >
-                  <MdOutlineTimeline size={18} />
                 </button>
               </div>
               <div className="dr-minmax">

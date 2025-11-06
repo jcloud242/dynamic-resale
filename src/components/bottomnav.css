@@ -11,6 +11,7 @@
   color: var(--fg);
   box-shadow: var(--elevation);
   border-top: 1px solid rgba(255, 255, 255, 0.03);
+  z-index: 2000; /* ensure nav stays above content/cards */
 }
 .dr-bottomnav button {
   background: transparent;
@@ -44,5 +45,5 @@
 /* active icon color */
 .dr-bottomnav button.active,
 .dr-bottomnav button[aria-current="true"] {
-  color: var(--accent);
+  color: var(--accent-strong);
 }

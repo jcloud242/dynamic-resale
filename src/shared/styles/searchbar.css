@@ -12,10 +12,11 @@
 .dr-search-input-wrap {
   display: flex;
   flex: 1;
+  position: relative;
 }
 .dr-search-input {
   flex: 1;
-  padding: 12px 18px;
+  padding: 12px 56px 12px 18px; /* leave room for suffix icon */
   border-radius: 22px;
   border: 0;
   background: var(--card-bg);
@@ -23,7 +24,36 @@
   box-shadow: var(--input-elev);
   font-size: 15px;
 }
-.dr-search-icon,
+.dr-search-suffix {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.dr-search-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--muted);
+  opacity: 0.55;
+  display: inline-block;
+}
+.dr-search-icon-inline {
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent; /* keep inside input look */
+  color: var(--muted); /* slightly more muted by default */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.dr-search-icon-inline:hover {
+  border-color: var(--accent-strong);
+  color: var(--fg);
+}
 .dr-scan-icon,
 .dr-photo-icon {
   padding: 10px;
@@ -35,7 +65,7 @@
   align-items: center;
   justify-content: center;
 }
-.dr-search-icon svg {
+.dr-search-icon-inline svg {
   width: 22px;
   height: 22px;
   color: inherit;
@@ -56,7 +86,7 @@
 
 /* Interactive polish */
 .dr-searchbar input,
-.dr-search-icon,
+.dr-search-icon-inline,
 .dr-scan-icon,
 .dr-photo-icon {
   transition: border-color 120ms ease, box-shadow var(--motion-duration) ease,
@@ -66,18 +96,18 @@
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   outline: none;
 }
-.dr-search-icon:hover,
+.dr-search-icon-inline:hover,
 .dr-scan-icon:hover,
 .dr-photo-icon:hover {
   transform: none;
-  border-color: #ed254e;
+  border-color: var(--accent-strong);
 }
-.dr-search-icon:active,
+.dr-search-icon-inline:active,
 .dr-scan-icon:active,
 .dr-photo-icon:active {
   transform: none;
 }
-.dr-search-icon:focus-visible,
+.dr-search-icon-inline:focus-visible,
 .dr-scan-icon:focus-visible,
 .dr-photo-icon:focus-visible {
   box-shadow: 0 0 0 4px var(--focus-ring);
