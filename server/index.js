@@ -189,6 +189,69 @@ app.use((req, res, next) => {
   next();
 });
 
+// Simple AI scan endpoint (stub): accepts { imageDataUrl } and returns a short analysis.
+// This is intentionally lightweight for local development. Replace with real provider integration later.
+app.post('/api/ai-scan', async (req, res) => {
+  try {
+    req.trace && req.trace('ai-scan-received');
+  const body = req.body || {};
+  // Require explicit user confirmation to protect quota and avoid accidental uploads
+  if (!body || body.confirmed !== true) return res.status(400).json({ error: 'missing confirmation: set confirmed: true to proceed' });
+  // accept either full data URL or compact base64 from client — pass the full body
+  const img = body || null;
+  if (!img || (!img.imageDataUrl && !img.imageBase64)) return res.status(400).json({ error: 'missing imageDataUrl or imageBase64' });
+
+    // attempt to use aiService if configured
+    let aiService = null;
+    try {
+      aiService = require('./aiService');
+    } catch (e) {
+      aiService = null;
+    }
+
+    if (aiService && typeof aiService.analyzeImage === 'function') {
+      try {
+        req.trace && req.trace('ai-analyze-start');
+        const result = await aiService.analyzeImage(img);
+        req.trace && req.trace('ai-analyze-end');
+        if (result) return res.json({ ok: true, result });
+        // if result is null, fall through to mocked fallback
+      } catch (e) {
+        console.warn('[ai-scan] analyzeImage failed', e && e.message);
+        // continue to mocked fallback
+      }
+    }
+
+    // Fallback mocked response
+    const mocked = {
+      summary: 'Detected likely product: Nintendo Switch (used). Suggestion: check recent sold listings for model variations.',
+      tags: ['nintendo switch', 'gaming', 'console'],
+      confidence: 0.67,
+      mocked: true,
+    };
+    req.trace && req.trace('ai-scan-respond-mocked');
+    return res.json({ ok: true, result: mocked });
+  } catch (e) {
+    return res.status(500).json({ error: String(e) });
+  }
+});
+
+// Debug endpoint: list available Gemini models for the configured key.
+// Useful to inspect which models the key can access (returns names like 'models/gemini-2.5-flash').
+app.get('/api/ai-models', async (req, res) => {
+  try {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || null;
+    if (!GEMINI_API_KEY) return res.status(400).json({ error: 'missing GEMINI_API_KEY' });
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+    const r = await axios.get(listUrl, { timeout: 8000 });
+    const md = r && r.data && r.data.models ? r.data.models.map(m => (m && (m.name || m.model || m.id)) || null).filter(Boolean) : [];
+    return res.json({ ok: true, models: md });
+  } catch (e) {
+    console.warn('[ai-models] failed', e && e.message);
+    return res.status(500).json({ error: e && e.message });
+  }
+});
+
 // Use pluggable cache wrapper (Redis if REDIS_URL set, otherwise in-memory fallback)
 const cache = require('./cache');
 async function setCache(key, value, ttlMs = 30000) {

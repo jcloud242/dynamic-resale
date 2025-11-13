@@ -15,8 +15,9 @@ export default function SearchHeader({
     <>
       <SearchBar
         onSearch={onSearch}
-        onOpenCamera={() => setCamera({ open: true, mode: 'barcode' })}
-        onOpenImage={() => setCamera({ open: true, mode: 'image' })}
+  onOpenCamera={() => setCamera({ open: true, mode: 'barcode' })}
+  // use 'photo' to match CameraModal's internal mode naming so the shutter shows immediately
+  onOpenImage={() => setCamera({ open: true, mode: 'photo' })}
         showScans={showScans}
         placeholder={placeholder}
         augmentSuggestions={augmentSuggestions}

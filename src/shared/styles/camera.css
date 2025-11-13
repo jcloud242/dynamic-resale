@@ -23,6 +23,40 @@
   z-index: 60;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Mobile / small screens: render the camera modal as part of the page flow so
+   it can scroll out of view and doesn't appear 'stuck' under a fixed navbar.
+   The navbar height can be provided via --nav-height; default is 56px. */
+/* expand to include tablets/large phones where the header is often fixed */
+@media (max-width: 1200px) {
+  .dr-camera-overlay {
+    position: relative !important; /* in-flow */
+    inset: auto;
+    background: transparent; /* don't obscure page when in-flow */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: block;
+    align-items: stretch;
+    justify-content: stretch;
+    z-index: 30; /* under top-level fixed navbar which likely has higher z-index */
+    padding: 0 12px;
+  }
+  .dr-camera-modal {
+    width: 100%;
+    max-width: none;
+    border-radius: 8px;
+    margin: calc(var(--nav-height, 56px) + 8px) 0 16px; /* push below the fixed navbar */
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  }
+  /* when in-flow, ensure preview modal is also in-flow/relative so it scrolls with the page */
+  .dr-photo-preview-modal {
+    position: relative;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  .dr-photo-card { box-shadow: 0 8px 30px rgba(0,0,0,0.12); }
+}
 .dr-camera-modal {
   width: 92%;
   max-width: 520px;
@@ -425,3 +459,48 @@
 }
 
 /* Image mode: similar to photo but slightly smaller frame to suggest preview/analysis */
+
+/* Preview modal card and animation */
+.dr-photo-preview-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+  z-index: 1200;
+  padding: 20px;
+}
+.dr-photo-card {
+  background: var(--dr-modal-bg);
+  padding: 12px;
+  border-radius: 10px;
+  max-width: 92%;
+  max-height: 86%;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+.dr-photo-img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.dr-animate-in {
+  transform: translateY(8px) scale(0.995);
+  opacity: 0;
+  animation: dr-modal-in 220ms cubic-bezier(.2,.9,.3,1) forwards;
+}
+@keyframes dr-modal-in {
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.dr-animate-out {
+  animation: dr-modal-out 180ms ease forwards;
+}
+@keyframes dr-modal-out {
+  to { transform: translateY(6px) scale(0.995); opacity: 0; }
+}
